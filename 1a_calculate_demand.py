@@ -62,4 +62,20 @@ b = np.linalg.lstsq(a, c, rcond=None)
 res = b[0]
 res[0] = e**res[0]
 print(res)
-# %% 
+# %% Test results by plotting an image
+def demand_forecast(popi, popj, gdpi, gdpj, f, d, est=res):
+    #function from gravity model
+    return est[0]*(popi*popj)**est[1]*(gdpi*gdpj)**est[2]/((f*d)**est[3])
+xs = [[demand.iloc[i,j],
+       demand_forecast(pop.iloc[i,y],
+                       pop.iloc[j,y],
+                       gdp.iloc[i,y],
+                       gdp.iloc[j,y],
+                       f, dist[i,j])]\
+                       for i in range(n) for j in range(i+1,n) for y in range(years)]
+xs = np.array(xs)
+plt.scatter(xs.T[0],xs.T[1])
+M = demand.max(axis=None)
+plt.plot([0,M],[0, M], color="orange")
+plt.show()
+# %%
