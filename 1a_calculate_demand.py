@@ -39,6 +39,7 @@ for i in range(n):
 distances = pd.DataFrame(data = dist.round(2),
                          index = airports.axes[1],
                          columns = airports.axes[1])
+distances.to_csv("distances.csv", sep="\t")
 
 #%% Least squares estimation
 pop = pd.read_csv("pop.csv", sep="\t", index_col=0)

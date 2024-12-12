@@ -4,8 +4,11 @@ import pandas as pd
 # Define sets: Airports, aircraft types
 # Import airport data
 Airports = pd.read_csv("airport_data.csv", sep='\t', index_col=0)
-airports = Airports.index.tolist()
-print(airports)
+airports = Airports.iloc[0]
+num_airports = range(len(airports))
+#print(airports[5])
+
+
 
 # Create aircraft dataframe
 aircraft_data = [["Speed (km/h)", 550, 820, 850, 870],
@@ -20,6 +23,7 @@ aircraft_data = [["Speed (km/h)", 550, 820, 850, 870],
 aircraft_data = pd.DataFrame(aircraft_data, columns = ["Metric","Aircraft 1","Aircraft 2","Aircraft 3","Aircraft 4"])
 aircraft_data.set_index("Metric", inplace=True) # Set index to metric
 aircraft_types = range(len(aircraft_data.columns))
+#print(aircraft_types)
 #print(aircraft_data.loc["Seats", "Aircraft 1"])
 
 
@@ -31,18 +35,20 @@ BT = 10 * 7 # Block Time (average utilisation time)b of aircraft type k
 hub = "EGLL"
 f = 1.42 # EUR/gallon fuel cost
 
-#for i in range(airports):
-#    if Airports[1,i] == hub:
-#        g_k = 0
-#    else:
-#       g_k = 1
+
+def g(index):
+    airport = airports[index]
+    if airport == hub:
+        return 0
+    else:
+        return 1
 
 # Define revenue function based on appendix A
 def revenue(distance):
-    if distance >0.01:
+    if distance > 0.01:
         return 5.9 * (distance ** -0.76) + 0.043
     else:
-        return 0
+        return 0.0
 
 # Define cost function based on appendix B
 def leg_based_cost(aircraft_type: str, distance: float):
@@ -50,15 +56,13 @@ def leg_based_cost(aircraft_type: str, distance: float):
     C_T = aircraft_data.loc["Time cost parameter CT (€/hr)", aircraft_type] * distance / aircraft_data.loc["Speed (km/h)", aircraft_type]  # Time-based costs for aircraft type and flight-leg used
     Fuel_cost = aircraft_data.loc["Fuel cost parameter CF (€)", aircraft_type] * f / 1.5 * distance  # Fuel costs for aircraft type and flight-leg used
     return C_x + C_T + Fuel_cost
-print(leg_based_cost("Aircraft 1", 1000))
+#print(leg_based_cost("Aircraft 1", 1000))
 
-#TODO: Import demand and distance data
-q = [[0, 1000, 200],  # Demand between airports
-          [1000, 0, 300],
-          [200, 300, 0]]
-distance = [[0, 2236, 3201], # Distance between airports
-          [2236, 0, 3500],
-          [3201, 3500, 0]]
+# Import demand and distance data
+distances = pd.read_csv("distances.csv", sep='\t', index_col=0)
+demand = pd.read_excel("DemandGroup35.xlsx", sheet_name='Group 35', usecols='B:V', skiprows=11, nrows=20)
+#print(demand)
+#print(distances.iloc[1,2])
 
 # Start modelling optimization problem
 m = gp.Model('practice')
@@ -69,28 +73,30 @@ z = {} # number of flights between airports i and j for aircraft type k
 w = {} #  flow rom airport i to airport j that transfers at hub
 AC = {} # number of aircrafts of type k
 
-# Define objective function #TODO: Incorporate lease costs
+# Define objective function #
 
-for i in range(len(airports)):
-    for j in range(len(airports)):
-        x[i, j] = m.addVar(obj=revenue(distance[i][j]) * distance[i][j], lb=0, vtype=gp.GRB.INTEGER)
-        w[i, j] = m.addVar(obj=revenue(distance[i][j]) * distance[i][j], lb=0, vtype=gp.GRB.INTEGER)
+for i in num_airports:
+    for j in num_airports:
+        x[i, j] = m.addVar(obj=revenue(distances.iloc[i,j]) * distances.iloc[i,j], lb=0, vtype=gp.GRB.INTEGER)
+        w[i, j] = m.addVar(obj=revenue(distances.iloc[i,j]) * distances.iloc[i,j], lb=0, vtype=gp.GRB.INTEGER)
 
         for k in aircraft_types:
-            z[i, j, k] = m.addVar(obj=- leg_based_cost(f"Aircraft {k+1}", distance[i][j]) * distance[i][j] * aircraft_data.loc["Seats", f"Aircraft {k+1}"], lb=0, vtype=gp.GRB.INTEGER)
+            z[i, j, k] = m.addVar(obj= -leg_based_cost(f"Aircraft {k+1}", distances.iloc[i,j]) * distances.iloc[i,j] * aircraft_data.loc["Seats", f"Aircraft {k+1}"], lb=0, vtype=gp.GRB.INTEGER)
+            AC[k] = m.addVar(obj= -aircraft_data.loc["Weekly lease cost (€)", f"Aircraft {k+1}"], lb=0, vtype=gp.GRB.INTEGER)
 
 m.update()
 m.setObjective(m.getObjective(), gp.GRB.MAXIMIZE)  # The objective is to maximize revenue
 
 # Define constraints TODO: Add constraints
-for i in range(len(airports)):
-    for j in range(len(airports)):
-        m.addConstr(x[i,j] + w[i,j] <= q[i][j]) #C1
-        m.addConstr(w[i,j] <= q[i][j] * g[i] *g[j]) #C1* Define g above
-        m.addConstr(x[i,j] <=z[i,j]*s*LF) #C2
-    m.addConstr(gp.quicksum(z[i,j] for j in airports), gp.GRB.EQUAL, gp.quicksum(z[j, i] for j in airports)) #C3
-
-m.addConstr(gp.quicksum(gp.quicksum((distance[i][j]/sp+LTO)*z[i,j] for i in airports) for j in airports) <= BT*AC) #C4
+for i in num_airports:
+    for j in num_airports:
+        m.addConstr(x[i,j] + w[i,j] <= demand.iloc[i,j+1]) #C1
+        m.addConstr(w[i,j] <= demand.iloc[i,j+1] * g(i) *g(j)) #C1*
+        m.addConstr(x[i,j] + gp.quicksum(w[i,m] * (1-g(j)) for m in num_airports) + gp.quicksum(w[m,j] * (1-g(i)) for m in num_airports) <= gp.quicksum(z[i,j,k] * aircraft_data.loc["Seats", f"Aircraft {k+1}"] * LF for k in aircraft_types)) #C2
+    for k in aircraft_types:
+        m.addConstr(gp.quicksum(z[i,j,k] for j in num_airports) == gp.quicksum(z[j,i,k] for j in num_airports)) #C3
+for k in aircraft_types:
+    m.addConstr(gp.quicksum(gp.quicksum((distances.iloc[i,j]/aircraft_data.loc["Speed (km/h)", f"Aircraft {k+1}"]+aircraft_data.loc["Average TAT", f"Aircraft {k+1}"])*z[i,j,k] for i in num_airports) for j in num_airports) <= BT*AC[k]) #C4
 
 
 m.update()
