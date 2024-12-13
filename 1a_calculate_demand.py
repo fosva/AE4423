@@ -49,7 +49,7 @@ demand = pd.read_csv("demand.csv", sep="\t", index_col=0)
 years=2
 f = 1.43 # fuel price
 #matrix a will contain the values to do the least square estimation with.
-#subtle assumption that all cities/countries are in the same order for all given data.
+#we do make the assumption that all cities/countries are indexed in the same order for all given data.
 ac = [[1,
       log(pop.iloc[i,y]*pop.iloc[j,y]),
       log(gdp.iloc[i,y]*gdp.iloc[j,y]),
@@ -64,6 +64,7 @@ res = b[0]
 res[0] = e**res[0]
 print(res)
 # %% Test results by plotting an image
+#gravity model as function using estimated parameters.
 def demand_forecast(popi, popj, gdpi, gdpj, f, d, est=res):
     #function from gravity model
     return est[0]*(popi*popj)**est[1]*(gdpi*gdpj)**est[2]/((f*d)**est[3])
