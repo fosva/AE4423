@@ -61,6 +61,11 @@ def leg_based_cost(aircraft_type: str, distance: float):
 # Import demand and distance data
 distances = pd.read_csv("distances.csv", sep='\t', index_col=0)
 demand = pd.read_excel("DemandGroup35.xlsx", sheet_name='Group 35', usecols='B:V', skiprows=11, nrows=20)
+def a(i,j,k):
+    if distances.iloc[i,j] <= aircraft_data.loc["Max Range (km)", f"Aircraft {k+1}"]:
+        return 10000
+    else:
+        return 0
 #print(demand)
 #print(distances.iloc[1,2])
 
@@ -93,8 +98,12 @@ for i in num_airports:
         m.addConstr(x[i,j] + w[i,j] <= demand.iloc[i,j+1]) #C1
         m.addConstr(w[i,j] <= demand.iloc[i,j+1] * g(i) *g(j)) #C1*
         m.addConstr(x[i,j] + gp.quicksum(w[i,m] * (1-g(j)) for m in num_airports) + gp.quicksum(w[m,j] * (1-g(i)) for m in num_airports) <= gp.quicksum(z[i,j,k] * aircraft_data.loc["Seats", f"Aircraft {k+1}"] * LF for k in aircraft_types)) #C2
+        for k in aircraft_types:
+            m.addConstr(z[i,j,k] <= a(i,j,k)) #C5
+
     for k in aircraft_types:
         m.addConstr(gp.quicksum(z[i,j,k] for j in num_airports) == gp.quicksum(z[j,i,k] for j in num_airports)) #C3
+
 for k in aircraft_types:
     m.addConstr(gp.quicksum(gp.quicksum((distances.iloc[i,j]/aircraft_data.loc["Speed (km/h)", f"Aircraft {k+1}"]+aircraft_data.loc["Average TAT", f"Aircraft {k+1}"])*z[i,j,k] for i in num_airports) for j in num_airports) <= BT*AC[k]) #C4
 
