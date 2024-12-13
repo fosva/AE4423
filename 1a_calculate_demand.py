@@ -51,10 +51,10 @@ f = 1.43 # fuel price
 #matrix a will contain the values to do the least square estimation with.
 #we do make the assumption that all cities/countries are indexed in the same order for all given data.
 ac = [[1,
-      log(pop.iloc[i,y]*pop.iloc[j,y]),
-      log(gdp.iloc[i,y]*gdp.iloc[j,y]),
+      log(pop.iloc[i,0]*pop.iloc[j,0]),
+      log(gdp.iloc[i,0]*gdp.iloc[j,0]),
       -log(f*dist[i,j]),
-      log(demand.iloc[i,j])] for i in range(n) for j in range(i+1,n) for y in range(years)]
+      log(demand.iloc[i,j])] for i in range(n) for j in range(i+1,n)]
 ac = np.array(ac)
 a = ac[:,:-1]
 c = ac[:,-1]
@@ -69,15 +69,34 @@ def demand_forecast(popi, popj, gdpi, gdpj, f, d, est=res):
     #function from gravity model
     return est[0]*(popi*popj)**est[1]*(gdpi*gdpj)**est[2]/((f*d)**est[3])
 xs = [[demand.iloc[i,j],
-       demand_forecast(pop.iloc[i,y],
-                       pop.iloc[j,y],
-                       gdp.iloc[i,y],
-                       gdp.iloc[j,y],
+       demand_forecast(pop.iloc[i,0],
+                       pop.iloc[j,0],
+                       gdp.iloc[i,0],
+                       gdp.iloc[j,0],
                        f, dist[i,j])]\
-                       for i in range(n) for j in range(i+1,n) for y in range(years)]
+                       for i in range(n) for j in range(i+1,n)]
 xs = np.array(xs)
 plt.scatter(xs.T[0],xs.T[1])
 M = demand.max(axis=None)
 plt.plot([0,M],[0, M], color="orange")
 plt.show()
+# %%
+
+pop["2025"] = pop["2020"] + 5/3 * (pop["2023"]-pop["2020"])
+gdp["2025"] = gdp["2020"] + 5/3 * (gdp["2023"]-gdp["2020"])
+
+# %%
+pop_array = pop["2025"].to_numpy()
+gdp_array = gdp["2025"].to_numpy()
+demand_2025 = np.zeros((n,n))
+for i in range(n):
+    for j in range(n):
+        if i != j:
+            demand_2025[i][j] = demand_forecast(pop_array[i],
+                                        pop_array[j],
+                                        gdp_array[i],
+                                        gdp_array[j],
+                                        f, dist[i,j])
+demand_2025
+np.savetxt("demand_2025.csv", demand_2025, fmt = "%f", delimiter = ',')
 # %%
