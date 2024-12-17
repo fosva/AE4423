@@ -7,7 +7,6 @@ Airports = pd.read_csv("airport_data.csv", sep='\t', index_col=0)
 airports = Airports.iloc[0]
 num_airports = range(len(airports))
 
-
 # Create aircraft dataframe
 aircraft_data = [["Speed (km/h)", 550, 820, 850, 870],
                  ["Seats", 45, 70, 150, 320],
@@ -23,7 +22,6 @@ aircraft_data.set_index("Metric", inplace=True) # Set index to metric
 aircraft_types = range(len(aircraft_data.columns))
 
 # Define parameters
-
 LF = 0.75 # Load Factor
 BT = 10 * 7 # Block Time (average utilisation time) of aircraft type k
 hub = "EGLL"
@@ -40,7 +38,6 @@ def g(index):
 def revenue(distance):
     if distance > 0.01:
         return 5.9 * (distance ** -0.76) + 0.043 # yield in RPK
-
     else:
         return 0.0
 
@@ -69,6 +66,7 @@ def b(j,k):
         return 10000
     else:
         return 0
+
 # Function to increase TAT with 50% if destination is hub
 def TAT(j,k):
     if airports[j] == hub:
@@ -90,13 +88,13 @@ AC = {} # number of aircraft of type k
 
 for i in num_airports:
     for j in num_airports:
-        x[i, j] = m.addVar(obj=revenue(distances.iloc[i,j]) * distances.iloc[i,j], lb=0, vtype=gp.GRB.INTEGER)
-        w[i, j] = m.addVar(obj=revenue(distances.iloc[i,j]) * distances.iloc[i,j], lb=0, vtype=gp.GRB.INTEGER)
-
+        x[i, j] = m.addVar(obj=revenue(distances.iloc[i,j]) * distances.iloc[i,j]*1.0, lb=0, vtype=gp.GRB.INTEGER)
+        w[i, j] = m.addVar(obj=revenue(distances.iloc[i,j]) * distances.iloc[i,j]*1.0, lb=0, vtype=gp.GRB.INTEGER)
         for k in aircraft_types:
-            z[i, j, k] = m.addVar(obj= -leg_based_cost(f"Aircraft {k+1}", distances.iloc[i,j]) , lb=0, vtype=gp.GRB.INTEGER)
+            z[i, j, k] = m.addVar(obj= -leg_based_cost(f"Aircraft {k+1}", distances.iloc[i,j])/1. , lb=0, vtype=gp.GRB.INTEGER)
 for k in aircraft_types:
     AC[k] = m.addVar(obj= -aircraft_data.loc["Weekly lease cost (€)", f"Aircraft {k+1}"], lb=0, vtype=gp.GRB.INTEGER)
+
 
 m.update()
 m.setObjective(m.getObjective(), gp.GRB.MAXIMIZE)  # The objective is to maximize revenue
@@ -104,27 +102,27 @@ m.setObjective(m.getObjective(), gp.GRB.MAXIMIZE)  # The objective is to maximiz
 # Define constraints
 for i in num_airports:
     for j in num_airports:
-         m.addConstr(x[i,j] + w[i,j] <= demand.iloc[i,j], name="Demand verification") #C1
-         m.addConstr(w[i,j] <= demand.iloc[i,j] * g(i) *g(j), name="Demand verification arriving at hub") #C1*
-         m.addConstr(x[i,j] + gp.quicksum(w[i,m] * (1-g(j)) for m in num_airports) + gp.quicksum(w[m,j] * (1-g(i)) for m in num_airports) <= gp.quicksum(z[i,j,k] * aircraft_data.loc["Seats", f"Aircraft {k+1}"] * LF for k in aircraft_types), name="Capacity verification") #C2
-         for k in aircraft_types:
-             m.addConstr(z[i,j,k] <= a(i,j,k), name="Range") #C5
-             m.addConstr(z[i,j,k] <= b(j,k), name="Runway length") #C6
+        m.addConstr(x[i,j] + w[i,j] <= demand.iloc[i,j]*1.8, name="Demand verification") #C1
+        m.addConstr(w[i,j] <= demand.iloc[i,j] * g(i) *g(j)*1.8, name="Demand verification arriving at hub") #C1*
+        m.addConstr(x[i,j] + gp.quicksum(w[i,m] * (1-g(j)) for m in num_airports) + gp.quicksum(w[m,j] * (1-g(i)) for m in num_airports) <= gp.quicksum(z[i,j,k] * aircraft_data.loc["Seats", f"Aircraft {k+1}"] * LF for k in aircraft_types), name="Capacity verification") #C2
+        for k in aircraft_types:
+            m.addConstr(z[i,j,k] <= a(i,j,k), name="Range") #C5
+            m.addConstr(z[i,j,k] <= b(j,k), name="Runway length") #C6
 
     for k in aircraft_types:
         m.addConstr(gp.quicksum(z[i,j,k] for j in num_airports) == gp.quicksum(z[j,i,k] for j in num_airports), name="Continuity/flow balance") #C3
 
 for k in aircraft_types:
-     m.addConstr(gp.quicksum(gp.quicksum((distances.iloc[i,j]/aircraft_data.loc["Speed (km/h)", f"Aircraft {k+1}"]+TAT(j,k))*z[i,j,k] for i in num_airports) for j in num_airports) <= BT*AC[k], name="AC productivity: Block time constraint") #C4
+    m.addConstr(gp.quicksum(gp.quicksum((distances.iloc[i,j]/aircraft_data.loc["Speed (km/h)", f"Aircraft {k+1}"]+TAT(j,k))*z[i,j,k] for i in num_airports) for j in num_airports) <= BT*AC[k], name="AC productivity: Block time constraint") #C4
 
 
 m.update()
 m.write('model.lp')
 # Set time constraint for optimization (5minutes)
-m.setParam('TimeLimit', 1 * 60)
+m.setParam('TimeLimit', 1 * 10)
 m.setParam('MIPgap', 0.009)
 m.optimize()
-# m.write("testout.sol")
+m.write("testout.sol")
 status = m.status
 
 if status == gp.GRB.Status.UNBOUNDED:
@@ -154,3 +152,26 @@ for i in num_airports:
         for k in aircraft_types:
             if z[i,j,k].X > 0:
                 print(airports[i], ' to ', airports[j], 'with Aircraft', k+1, ":",z[i,j,k].X)
+#i, j, k, l = 0, 0, 0, 0
+# Print the values of all variables
+# for i in m.getVars():
+#     if i.X > 0:
+#         print(i)
+#         print(f"x: {i.VarName} = {i.X}")
+for i in m.getVars():
+    if i.varname == "C2400":
+        print(f"Number of aircraft 1: {i.X}")
+    elif i.varname == "C2401":
+        print(f"Number of aircraft 2: {i.X}")
+    elif i.varname == "C2402":
+        print(f"Number of aircraft 3: {i.X}")
+    elif i.varname == "C2403":
+        print(f"Number of aircraft 4: {i.X}")
+# print("Number of x variables: ", i)
+# print("Number of z variables: ", j)
+# print("Number of w variables: ", k)
+# print("Number of AC variables: ", l)
+#
+# # Count and print the number of AC variables
+# ac_vars = [var for var in m.getVars() if var.VarName.startswith('x')]
+# print(f"Number of AC variables: {len(ac_vars)}")
