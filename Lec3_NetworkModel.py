@@ -64,7 +64,16 @@ elif status != GRB.Status.INF_OR_UNBD and status != GRB.Status.INFEASIBLE:
 print()
 print("Frequencies:----------------------------------")
 print()
-for i in airports:
-    for j in airports:
-        if z[i,j].X >0:
-            print(Airports[i], ' to ', Airports[j], z[i,j].X)
+# for i in airports:
+#     for j in airports:
+#         if z[i,j].X >0:
+#             print(Airports[i], ' to ', Airports[j], z[i,j].X)
+
+
+
+# all_vars = model.getVars()
+# values = model.getAttr("X", all_vars)
+# names = model.getAttr("VarName", all_vars)
+#
+# for name, val in zip(names, values):
+#     print(f"{name} = {val}")
