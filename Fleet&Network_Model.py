@@ -155,10 +155,6 @@ else:
 print()
 print("Frequencies:----------------------------------")
 print()
-for i in airports:
-    for j in airports:
-        if z[i,j].X >0:
-            print(Airports[i], ' to ', Airports[j], z[i,j].X)
 
 for i in num_airports:
     for j in num_airports:
