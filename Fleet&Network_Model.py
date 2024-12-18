@@ -211,12 +211,10 @@ solution = {k: [] for k in aircraft_types}
 depot=0
 # Collect the routes for each vehicle and track demand
 for k in aircraft_types:
-    route = []
     for i in num_airports:
         for j in num_airports:
             if z[i, j, k].x > 0.5:  # Edge is part of the route
-                solution[k].append((i, j))
-                route.append((i, j))
+                solution[k].append((i, j,z[i,j,k].getAttr('x')))
                 # Add the demand for the current location to the vehicle's total demand
                 #if i != depot:
                 #    vehicle_demand[k] += locations[i][3]  # Demand is stored at index 3 for each location
@@ -227,7 +225,7 @@ used_routes = np.zeros((len(airports), len(airports)))
 for k in aircraft_types:
     vehicle_route = solution[k]
     has_legend = False
-    for i, j in vehicle_route:
+    for i, j,trips in vehicle_route:
         # Draw an edge from node i to node j for this vehicle's route.
         #using an offset to see routes used more than once.
         y1,x1 = np.array(airport_coords[i], dtype=float)
@@ -242,16 +240,17 @@ for k in aircraft_types:
         else:
             v_n = v_r/norm
 
-        offset = v_n*0.2
-        visited_count = used_routes[i,j]
-        p1 = np.array([x1,y1]) - offset*(0.5+visited_count)
-        p2 = np.array([x2,y2]) - offset*(0.5+visited_count)
-        used_routes[i,j] += 1
-        plt.plot([p1[0],p2[0]], [p1[1],p2[1]], 
-                    marker='o', linestyle='-', label=f"Aircraft type {k + 1}" if not has_legend else "", 
-                    #color=plt.cm.get_cmap("tab10")(k))  # Assign a color to each vehicle
-                    color=plt.colormaps.get_cmap("tab10")(k+1))
-        has_legend = True
+        for trip in range(int(trips)):
+            offset = v_n*0.2
+            visited_count = used_routes[i,j]
+            p1 = np.array([x1,y1]) - offset*(0.8+visited_count)
+            p2 = np.array([x2,y2]) - offset*(0.8+visited_count)
+            used_routes[i,j] += 1
+            plt.plot([p1[0],p2[0]], [p1[1],p2[1]], 
+                        marker='o', linestyle='-', label=f"Aircraft type {k + 1}" if not has_legend else "", 
+                        #color=plt.cm.get_cmap("tab10")(k))  # Assign a color to each vehicle
+                        color=plt.colormaps.get_cmap("tab10")(k+1))
+            has_legend = True
 
 plt.legend()
 plt.title('Fleet & Network model')
