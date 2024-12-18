@@ -4,6 +4,7 @@ import pandas as pd
 import networkx as nx
 import matplotlib.pyplot as plt
 import PIL
+import numpy as np
 
 # Define sets: Airports, aircraft types
 # Import airport data
@@ -204,16 +205,32 @@ print(G, pos)
 nx.draw(G, pos, with_labels=True, node_size=300, font_size=10, node_color='skyblue', font_weight='bold')
 
 
-#for nice plot:
-used_routes = np.zeros((N,N))
+locations = airports
+solution = {k: [] for k in aircraft_types}
+#vehicle_demand = {k: 0 for k in aircraft_types} 
+depot=0
+# Collect the routes for each vehicle and track demand
+for k in aircraft_types:
+    route = []
+    for i in num_airports:
+        for j in num_airports:
+            if z[i, j, k].x > 0.5:  # Edge is part of the route
+                solution[k].append((i, j))
+                route.append((i, j))
+                # Add the demand for the current location to the vehicle's total demand
+                #if i != depot:
+                #    vehicle_demand[k] += locations[i][3]  # Demand is stored at index 3 for each location
+
+
+used_routes = np.zeros((len(airports), len(airports)))
 # Plot the routes for each vehicle
-for k in range(K):
+for k in aircraft_types:
     vehicle_route = solution[k]
     for i, j in vehicle_route:
         # Draw an edge from node i to node j for this vehicle's route.
         #using an offset to see routes used more than once.
-        x1,y1 = locations[i][1], locations[i][2]
-        x2,y2 = locations[j][1], locations[j][2]
+        y1,x1 = np.array(airport_coords[i], dtype=float)
+        y2,x2 = np.array(airport_coords[j], dtype=float)
         v = np.array([x2-x1,y2-y1])
         
         v_r = np.array([-v[1],v[0]])
