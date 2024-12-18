@@ -82,8 +82,14 @@ plt.plot([0,M],[0, M], color="orange")
 plt.show()
 # %%
 
-pop["2025"] = pop["2020"] + 5/3 * (pop["2023"]-pop["2020"])
-gdp["2025"] = gdp["2020"] + 5/3 * (gdp["2023"]-gdp["2020"])
+#pop["2025"] = pop["2020"] + 5/3 * (pop["2023"]-pop["2020"])
+#gdp["2025"] = gdp["2020"] + 5/3 * (gdp["2023"]-gdp["2020"])
+# exponential growth instead of linear
+pop_growth = (pop["2023"]/pop["2020"]) ** (1/3)
+gdp_growth = (gdp["2023"]/gdp["2020"]) ** (1/3)
+
+pop["2025"] = pop["2023"]*pop_growth**years
+gdp["2025"] = gdp["2023"]*gdp_growth**years
 
 # %%
 pop_array = pop["2025"].to_numpy()
