@@ -77,8 +77,8 @@ def b(j,k):
         return 0
 
 # Function to increase TAT with 50% if destination is hub
-def TAT(j,k):
-    if airports[j] == hub:
+def TAT(i,j,k):
+    if airports[i] == hub or airports[j] == hub:
         return 1.5 * aircraft_data.loc["Average TAT", f"Aircraft {k+1}"]
     else:
         return aircraft_data.loc["Average TAT", f"Aircraft {k+1}"]
@@ -97,12 +97,12 @@ AC = {} # number of aircraft of type k
 
 for i in num_airports:
     for j in num_airports:
-        x[i, j] = m.addVar(obj=revenue(distances.iloc[i,j]) * distances.iloc[i,j]*1.0, lb=0, vtype=gp.GRB.INTEGER)
-        w[i, j] = m.addVar(obj=revenue(distances.iloc[i,j]) * distances.iloc[i,j]*1.0, lb=0, vtype=gp.GRB.INTEGER)
+        x[i, j] = m.addVar(obj=revenue(distances.iloc[i,j]) * distances.iloc[i,j]*1.0, lb=0, vtype=gp.GRB.INTEGER, name=f"x_{i}_{j}")
+        w[i, j] = m.addVar(obj=revenue(distances.iloc[i,j]) * distances.iloc[i,j]*1.0, lb=0, vtype=gp.GRB.INTEGER, name=f"w_{i}_{j}")
         for k in aircraft_types:
-            z[i, j, k] = m.addVar(obj= -leg_based_cost(f"Aircraft {k+1}", distances.iloc[i,j])/1. , lb=0, vtype=gp.GRB.INTEGER)
+            z[i, j, k] = m.addVar(obj= -leg_based_cost(f"Aircraft {k+1}", distances.iloc[i,j])/1. , lb=0, vtype=gp.GRB.INTEGER, name=f"z_{i}_{j}_{k}")
 for k in aircraft_types:
-    AC[k] = m.addVar(obj= -aircraft_data.loc["Weekly lease cost (€)", f"Aircraft {k+1}"], lb=0, vtype=gp.GRB.INTEGER)
+    AC[k] = m.addVar(obj= -aircraft_data.loc["Weekly lease cost (€)", f"Aircraft {k+1}"], lb=0, vtype=gp.GRB.INTEGER, name=f"AC_{k+1}")
 
 
 m.update()
@@ -110,9 +110,10 @@ m.setObjective(m.getObjective(), gp.GRB.MAXIMIZE)  # The objective is to maximiz
 
 # Define constraints
 for i in num_airports:
+    m.addConstr(gp.quicksum(z[j,i,k] for k in aircraft_types for j in num_airports) <= float(Airports.loc["Available slots"][i]), name="Available slots") # C8
     for j in num_airports:
-        m.addConstr(x[i,j] + w[i,j] <= demand.iloc[i,j]*1.8, name="Demand verification") #C1
-        m.addConstr(w[i,j] <= demand.iloc[i,j] * g(i) *g(j)*1.8, name="Demand verification arriving at hub") #C1*
+        m.addConstr(x[i,j] + w[i,j] <= demand.iloc[i,j]*1.0, name="Demand verification") #C1
+        m.addConstr(w[i,j] <= demand.iloc[i,j] * g(i) *g(j)*1.0, name="Demand verification arriving at hub") #C1*
         m.addConstr(x[i,j] + gp.quicksum(w[i,m] * (1-g(j)) for m in num_airports) + gp.quicksum(w[m,j] * (1-g(i)) for m in num_airports) <= gp.quicksum(z[i,j,k] * aircraft_data.loc["Seats", f"Aircraft {k+1}"] * LF for k in aircraft_types), name="Capacity verification") #C2
         for k in aircraft_types:
             m.addConstr(z[i,j,k] <= a(i,j,k), name="Range") #C5
@@ -122,7 +123,7 @@ for i in num_airports:
         m.addConstr(gp.quicksum(z[i,j,k] for j in num_airports) == gp.quicksum(z[j,i,k] for j in num_airports), name="Continuity/flow balance") #C3
 
 for k in aircraft_types:
-    m.addConstr(gp.quicksum(gp.quicksum((distances.iloc[i,j]/aircraft_data.loc["Speed (km/h)", f"Aircraft {k+1}"]+TAT(j,k))*z[i,j,k] for i in num_airports) for j in num_airports) <= BT*AC[k], name="AC productivity: Block time constraint") #C4
+    m.addConstr(gp.quicksum((distances.iloc[i,j]/aircraft_data.loc["Speed (km/h)", f"Aircraft {k+1}"]+TAT(i,j,k))*z[i,j,k] for i in num_airports for j in num_airports) <= BT*AC[k], name="AC productivity: Block time constraint") #C4
 
 
 m.update()
@@ -191,7 +192,7 @@ G = nx.Graph()
 
 # Add nodes to the graph
 for i in num_airports:
-    G.add_node(airports[i], pos=(float(airport_coords[i,1]), float(airport_coords[i,0]))) 
+    G.add_node(airports[i], pos=(float(airport_coords[i,1]), float(airport_coords[i,0])))
 
 # Plot the locations as points
 
@@ -207,7 +208,7 @@ nx.draw(G, pos, with_labels=True, node_size=300, font_size=10, node_color='skybl
 
 locations = airports
 solution = {k: [] for k in aircraft_types}
-#vehicle_demand = {k: 0 for k in aircraft_types} 
+#vehicle_demand = {k: 0 for k in aircraft_types}
 depot=0
 # Collect the routes for each vehicle and track demand
 for k in aircraft_types:
@@ -232,7 +233,7 @@ for k in aircraft_types:
         y1,x1 = np.array(airport_coords[i], dtype=float)
         y2,x2 = np.array(airport_coords[j], dtype=float)
         v = np.array([x2-x1,y2-y1])
-        
+
         v_r = np.array([-v[1],v[0]])
         norm = np.linalg.norm(v)
         if norm == 0:
@@ -246,8 +247,8 @@ for k in aircraft_types:
         p1 = np.array([x1,y1]) - offset*(0.5+visited_count)
         p2 = np.array([x2,y2]) - offset*(0.5+visited_count)
         used_routes[i,j] += 1
-        plt.plot([p1[0],p2[0]], [p1[1],p2[1]], 
-                    marker='o', linestyle='-', label=f"Vehicle {k + 1}" if i == vehicle_route[0][0] else "", 
+        plt.plot([p1[0],p2[0]], [p1[1],p2[1]],
+                    marker='o', linestyle='-', label=f"Vehicle {k + 1}" if i == vehicle_route[0][0] else "",
                     #color=plt.cm.get_cmap("tab10")(k))  # Assign a color to each vehicle
                     color=plt.colormaps.get_cmap("tab10")(k+1))
 
