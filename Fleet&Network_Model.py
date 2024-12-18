@@ -1,13 +1,18 @@
+#%%
 import gurobipy as gp
 import pandas as pd
+import networkx as nx
+import matplotlib.pyplot as plt
+import PIL
 
 # Define sets: Airports, aircraft types
 # Import airport data
 Airports = pd.read_csv("airport_data.csv", sep='\t', index_col=0)
 airports = Airports.iloc[0]
 num_airports = range(len(airports))
+airport_coords = Airports.iloc[1:3,:].to_numpy().T
 #print(airports[5])
-
+#%%
 
 
 # Create aircraft dataframe
@@ -137,3 +142,27 @@ for i in airports:
     for j in airports:
         if z[i,j].X >0:
             print(Airports[i], ' to ', Airports[j], z[i,j].X)
+
+#%%
+G = nx.Graph()
+
+# Add nodes to the graph
+for i in num_airports:
+    G.add_node(airports[i], pos=(float(airport_coords[i,1]), float(airport_coords[i,0]))) 
+
+# Plot the locations as points
+
+image = PIL.Image.open('europe.png')
+x = [-25.11, 30.82]
+y = [28.40, 66.55]
+plt.figure(figsize=((x[1]-x[0])/5, (y[1]-y[0])/5))
+plt.imshow(image, extent = [x[0], x[1], y[0], y[1]])
+pos = nx.get_node_attributes(G, 'pos')
+print(G, pos)
+nx.draw(G, pos, with_labels=True, node_size=300, font_size=10, node_color='skyblue', font_weight='bold')
+
+plt.legend()
+plt.title('Fleet & Network model')
+plt.grid(True)
+plt.show()
+# %%
