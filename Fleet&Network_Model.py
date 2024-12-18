@@ -202,7 +202,7 @@ plt.figure(figsize=((x[1]-x[0])/5, (y[1]-y[0])/5))
 plt.imshow(image, extent = [x[0], x[1], y[0], y[1]])
 pos = nx.get_node_attributes(G, 'pos')
 print(G, pos)
-nx.draw(G, pos, with_labels=True, node_size=300, font_size=10, node_color='skyblue', font_weight='bold')
+nx.draw(G, pos, with_labels=True, node_size=400, font_size=7, node_color='skyblue', font_weight='bold')
 
 
 locations = airports
