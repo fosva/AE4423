@@ -226,6 +226,7 @@ used_routes = np.zeros((len(airports), len(airports)))
 # Plot the routes for each vehicle
 for k in aircraft_types:
     vehicle_route = solution[k]
+    has_legend = False
     for i, j in vehicle_route:
         # Draw an edge from node i to node j for this vehicle's route.
         #using an offset to see routes used more than once.
@@ -247,9 +248,10 @@ for k in aircraft_types:
         p2 = np.array([x2,y2]) - offset*(0.5+visited_count)
         used_routes[i,j] += 1
         plt.plot([p1[0],p2[0]], [p1[1],p2[1]], 
-                    marker='o', linestyle='-', label=f"Vehicle {k + 1}" if i == vehicle_route[0][0] else "", 
+                    marker='o', linestyle='-', label=f"Aircraft type {k + 1}" if not has_legend else "", 
                     #color=plt.cm.get_cmap("tab10")(k))  # Assign a color to each vehicle
                     color=plt.colormaps.get_cmap("tab10")(k+1))
+        has_legend = True
 
 plt.legend()
 plt.title('Fleet & Network model')
