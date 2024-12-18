@@ -203,6 +203,37 @@ pos = nx.get_node_attributes(G, 'pos')
 print(G, pos)
 nx.draw(G, pos, with_labels=True, node_size=300, font_size=10, node_color='skyblue', font_weight='bold')
 
+
+#for nice plot:
+used_routes = np.zeros((N,N))
+# Plot the routes for each vehicle
+for k in range(K):
+    vehicle_route = solution[k]
+    for i, j in vehicle_route:
+        # Draw an edge from node i to node j for this vehicle's route.
+        #using an offset to see routes used more than once.
+        x1,y1 = locations[i][1], locations[i][2]
+        x2,y2 = locations[j][1], locations[j][2]
+        v = np.array([x2-x1,y2-y1])
+        
+        v_r = np.array([-v[1],v[0]])
+        norm = np.linalg.norm(v)
+        if norm == 0:
+            print("Delen door 0 is flauwekul.")
+            v_n = v_r
+        else:
+            v_n = v_r/norm
+
+        offset = v_n*0.2
+        visited_count = used_routes[i,j]
+        p1 = np.array([x1,y1]) - offset*(0.5+visited_count)
+        p2 = np.array([x2,y2]) - offset*(0.5+visited_count)
+        used_routes[i,j] += 1
+        plt.plot([p1[0],p2[0]], [p1[1],p2[1]], 
+                    marker='o', linestyle='-', label=f"Vehicle {k + 1}" if i == vehicle_route[0][0] else "", 
+                    #color=plt.cm.get_cmap("tab10")(k))  # Assign a color to each vehicle
+                    color=plt.colormaps.get_cmap("tab10")(k+1))
+
 plt.legend()
 plt.title('Fleet & Network model')
 plt.grid(True)
