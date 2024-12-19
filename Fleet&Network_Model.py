@@ -240,7 +240,7 @@ for k in aircraft_types:
         else:
             v_n = v_r/norm
 
-        for trip in range(int(trips)):
+        for trip in range(round(trips)):
             offset = v_n*0.2
             visited_count = used_routes[i,j]
             p1 = np.array([x1,y1]) - offset*(0.8+visited_count)
