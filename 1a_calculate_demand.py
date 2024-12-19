@@ -78,8 +78,8 @@ xs = [[demand.iloc[i,j],
 xs = np.array(xs)
 plt.scatter(xs.T[0],xs.T[1])
 M = demand.max(axis=None)
-plt.plot([0,M],[0, M], color="orange")
-plt.show()
+#plt.plot([0,M],[0, M], color="orange")
+#plt.show()
 # %%
 
 #pop["2025"] = pop["2020"] + 5/3 * (pop["2023"]-pop["2020"])
