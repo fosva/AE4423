@@ -234,18 +234,16 @@ for k in aircraft_types:
         else:
             v_n = v_r/norm
 
-        for trip in range(round(trips)):
-            offset = v_n*0.2
-            visited_count = used_routes[i,j]
-            p1 = np.array([x1,y1]) - offset*(0.8+visited_count)
-            p2 = np.array([x2,y2]) - offset*(0.8+visited_count)
-            used_routes[i,j] += 1
-            plt.plot([p1[0],p2[0]], [p1[1],p2[1]],
-                        marker='o', linestyle='-', label=f"Aircraft type {k + 1}" if not has_legend else "")
-                        #color=plt.cm.get_cmap("tab10")(k))  # Assign a color to each vehicle
-                        #color=plt.colormaps.get_cmap("tab10")(k+1))
-            has_legend = True
 
+        offset = v_n*0.2
+        visited_count = used_routes[i,j]
+        p1 = np.array([x1,y1]) - offset*(0.8+visited_count+trips/4)
+        p2 = np.array([x2,y2]) - offset*(0.8+visited_count)
+        used_routes[i,j] += 1
+        plt.plot([p1[0],p2[0]], [p1[1],p2[1]],
+                    marker='o', linestyle='-', linewidth=1+trips**0.5, label=f"Aircraft type {k + 1}" if not has_legend else "",
+                    color=plt.cm.get_cmap("tab10")(k))  # Assign a color to each aircraft type
+        has_legend=True
 plt.legend()
 plt.title('Fleet & Network model')
 plt.grid(True)
