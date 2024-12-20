@@ -64,7 +64,7 @@ def leg_based_cost(aircraft_type: str, i, j):
 distances = pd.read_csv("distances.csv", sep='\t', index_col=0)
 demand = pd.read_csv("demand_2025.csv", sep=',', header=None, names=airports)
 demand.index = airports
-
+#%%
 # Big M for constraint C5 (range)
 def a(i,j,k):
     if distances.iloc[i,j] <= aircraft_data.loc["Max Range (km)", f"Aircraft {k+1}"]:
