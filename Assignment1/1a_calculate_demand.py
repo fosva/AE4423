@@ -61,6 +61,7 @@ c = ac[:,-1]
 
 b = np.linalg.lstsq(a, c, rcond=None)
 res = b[0]
+print(res)
 res[0] = e**res[0]
 print(res)
 # %% Test results by plotting an image
@@ -78,8 +79,10 @@ xs = [[demand.iloc[i,j],
 xs = np.array(xs)
 plt.scatter(xs.T[0],xs.T[1])
 M = demand.max(axis=None)
-#plt.plot([0,M],[0, M], color="orange")
-#plt.show()
+plt.plot([0,M],[0, M], color="orange")
+plt.xlabel("Actual demand in 2020 by amount")
+plt.ylabel("Predicted demand in 2020")
+plt.show()
 # %%
 
 #pop["2025"] = pop["2020"] + 5/3 * (pop["2023"]-pop["2020"])
@@ -104,5 +107,5 @@ for i in range(n):
                                         gdp_array[j],
                                         f, dist[i,j])
 demand_2025
-np.savetxt("demand_2025.csv", demand_2025, fmt = "%f", delimiter = ',')
+np.savetxt("demand_2025.csv", demand_2025, fmt = "%.2f", delimiter = ',')
 # %%
