@@ -83,9 +83,11 @@ def f(ac: Aircraft, location, time, cargo, dest, demand):
     demand = np.copy(demand)
 
     if time>1200:
+        print("time's up")
         return -np.inf, None, None, None
     
     if time == 1200:
+        print("1200")
         if location != hub:
             return -np.inf, None, None, None
         return 0, [location], [time], demand
@@ -143,9 +145,19 @@ def f(ac: Aircraft, location, time, cargo, dest, demand):
 
         #preparing for next step
         location = dest
+    
+    outcomes = [f(ac, location, time+tt, cargo, dest, demand) for dest in range(AP)]
 
-    p, route, times, demand_res = max([f(ac, location, time+tt, cargo, dest, demand) for dest in range(AP)], key = lambda x: x[0])
-    return p + profit, [dest] + route, [time] + times, demand_res
+    p, route, times, demand_res =\
+        max(outcomes, key = lambda x: x[0])
+    try:
+        profit_res = p + profit
+        route_res = [dest] + route
+        times_res = [time] + times
+    except TypeError as foutje:
+        #raise Exception(foutje, locals()["outcomes"])
+        print(locals()["outcomes"])
+    return profit_res, route_res, times_res, demand_res
 
 #demand d_ijt demand in timeframe t from airport i to airport j.
 
@@ -162,7 +174,9 @@ while not stop:
             location = hub
             time = 0
             cargo = np.zeros(AP)
-            profit, route, times, demand_res = max([f(ac, location, time, cargo, dest, demand) for dest in range(AP)], key = lambda x: x[0])
+            profit, route, times, demand_res =\
+                max([f(ac, location, time, cargo, dest, demand) for dest in range(AP)],\
+                                                   key = lambda x: x[0])
 
             if profit > max_profit:
                 max_profit = profit
@@ -178,6 +192,3 @@ while not stop:
         fleet[opt_ac_type] -=1
 
 
-
-
-# %%
