@@ -1,11 +1,15 @@
 #%%
 import numpy as np
 import pandas as pd
+from math import pi, sqrt, sin, cos
 
 # Read the excel files
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
 fleet_options = pd.read_excel("FleetType.xlsx", index_col=0)
 demand_df = pd.read_excel("Group35.xlsx", skiprows=range(1,5), index_col=0)
+
+#number of airports
+AP = len(airports.columns)
 
 #%%
 # Simplify column names for better indexing
@@ -20,14 +24,41 @@ demand_df.columns = demand_columns
 #print(Demand_df.loc[3,str(5)])
 
 # Restructure the demand data into a 3D array
-demand = np.zeros((len(airports.columns), len(airports.columns),30))
-for i in range(len(airports.columns)):
-    for j in range(len(airports.columns)):
+demand = np.zeros((AP, AP,30))
+for i in range(AP):
+    for j in range(AP):
         for k in range(30):
             df_index = i * 20 + j + 1
             demand[i,j,k] = demand_df.loc[df_index, str(k)]
 # For example the demand from Airport 0 (LHR) to Airport 1 (CDG) for the 5th time slot
-#print(Demand[0,1,5])
+total_demand = np.copy(demand)
+radian = pi/180
+airports = pd.read_excel("AirportData.xlsx", index_col=0)
+runways = airports.loc[["Runway (m)"]].to_numpy()
+
+def d(pos0: list, pos1: list):
+    R = 6371
+    #from the assignment:
+    return 2*R*sqrt(sin((pos0[0]-pos1[0])/2)**2 + cos(pos0[0])*cos(pos1[0])*sin((pos0[1]-pos1[1])/2)**2)
+
+n = len(airports.axes[1])
+#Create n x n distance matrix where n is the number of airports considered.
+dist = np.zeros([n,n])
+for i in range(n):
+    for j in range(n):
+        poss = airports.loc[["Latitude (deg)", "Longitude (deg)"]].astype(float)
+        loc0 = poss.iloc[:,i]
+        loc1 = poss.iloc[:,j]
+        dist[i,j] = d(loc0.to_numpy()*radian, loc1.to_numpy()*radian)
+
+distances = pd.DataFrame(data = dist.round(2),
+                         index = airports.axes[1],
+                         columns = airports.axes[1])
+
+#fuel price in USD/gal
+fuel_price = 1.42
+yield_coeff = 0.26
+
 #%%
 aircraft_types = pd.read_excel("FleetType.xlsx", index_col=0)
 
@@ -35,18 +66,91 @@ aircraft_types = pd.read_excel("FleetType.xlsx", index_col=0)
 types = aircraft_types.to_numpy()
 
 #%%
-
 #index 3 is FRA, our hub
 hub = 3
-def f(type, demand, location = hub):
-    profit, route, cargo = max([f(type, demand, location, choice) for choice in range(20)], key = lambda x: x[0])
-    return profit, route, cargo 
 
-#demand d_tij demand in timeframe t from airport i to airport j.
-
-
+class Aircraft:
+    def __init__(self, type):
+        self.speed, self.capacity, self.tat, self.range,\
+        self.runway_length, self.lease_cost, self.fixed_cost,\
+        self.hour_cost, self.fuel_cost, _ = types.T[type]
 
 fleet = types[-1]
+
+
+#%%
+def f(ac: Aircraft, location, time, cargo, dest):
+    profit=0
+
+    if dest == location:
+        pass
+
+    #if flight does not visit hub
+    if (location == hub) == (dest == hub) == False:
+        return -np.inf, None
+    else:
+        d = distances[location, hub]
+        if d > ac.range or runways[dest] < ac.runway_length:
+            #return infeasible if runway or range do not match.
+            return -np.inf, None
+        
+        flight_hours = d/ac.speed
+
+        cost = ac.fixed_cost + ac.hour_cost*flight_hours + ac.fuel_cost*fuel_price*d/1.5
+
+        #uitladen @location (niet dest)
+        cargo[location] = 0
+
+        #inladen @location (niet dest)
+
+        #hoe laat is het
+        timeslot = time//40
+
+        #First, take all possible cargo from 2 time slots ago
+        if timeslot>1:
+            load = min(demand[location, dest, timeslot-2], 0.2*total_demand[location, dest, timeslot-2], ac.capacity-cargo.sum())
+            cargo[dest] += load
+            demand[location, dest, timeslot-2] -= load
+
+        #Take all possible cargo from previous time slot
+        if timeslot>0:
+            load = min(demand[location, dest, timeslot-1], 0.2*total_demand[location, dest, timeslot-1], ac.capacity - cargo.sum())
+            cargo[dest] += load
+            demand[location, dest, timeslot-1] -= load
+
+        #take all possible cargo from current time slot
+        load = min(demand[location, dest, timeslot], ac.capacity-cargo.sum())
+        cargo[dest] += load
+        demand[location, dest, timeslot] -= load
+
+        revenue = yield_coeff*d*cargo.sum()
+
+        profit = revenue - cost
+
+        #add 2*15 minutes takeoff & landing time, scale to model timescale
+        tt = (flight_hours+0.5)*10
+
+
+        #preparing for next step
+        location = dest
+
+    p, route = max([f(ac, tt-1, location, time+1, cargo, dest) for dest in range(AP)], key = lambda x: x[0])
+
+    return p + profit, [dest] + route
+
+
+
+
+
+
+            
+            
+
+
+
+#demand d_tij demand in timeframe t from airport i to airport j.
+#TODO make a copy of demand to get 20% for past timeframes
+
 
 stop = False
 while not stop:
@@ -54,9 +158,19 @@ while not stop:
 
     for type in range(3):
         if fleet(type) > 0:
+            ac = Aircraft(type)
+            #travel time left to reach location
+            tt = 0
+            location = hub
+            time = 0
+            cargo = np.zeros(AP)
+            profit = max([f(ac, tt, location, time, cargo, dest) for dest in range(AP)])
 
-            profit = f(type, demand)
 
+
+
+    if np.any(fleet == 0) or max_profit < 0:
+        stop = True
 
 
 # %%
