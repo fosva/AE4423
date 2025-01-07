@@ -1,7 +1,8 @@
 #%%
 import numpy as np
 import pandas as pd
-from math import pi, sqrt, sin, cos
+from math import pi, sqrt, sin, cos, ceil
+from debugger import debug
 
 # Read the excel files
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
@@ -34,7 +35,7 @@ for i in range(AP):
 total_demand = np.copy(demand)
 radian = pi/180
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
-runways = airports.loc[["Runway (m)"]].to_numpy()
+runways = airports.loc[["Runway (m)"]].to_numpy().flatten()
 
 def d(pos0: list, pos1: list):
     R = 6371
@@ -51,10 +52,6 @@ for i in range(n):
         loc1 = poss.iloc[:,j]
         dist[i,j] = d(loc0.to_numpy()*radian, loc1.to_numpy()*radian)
 
-distances = pd.DataFrame(data = dist.round(2),
-                         index = airports.axes[1],
-                         columns = airports.axes[1])
-
 #fuel price in USD/gal
 fuel_price = 1.42
 yield_coeff = 0.26
@@ -70,29 +67,42 @@ types = aircraft_types.to_numpy()
 hub = 3
 
 class Aircraft:
-    def __init__(self, type):
+    def __init__(self, ac_type):
         self.speed, self.capacity, self.tat, self.range,\
         self.runway_length, self.lease_cost, self.fixed_cost,\
-        self.hour_cost, self.fuel_cost, _ = types.T[type]
+        self.hour_cost, self.fuel_cost, _ = types.T[ac_type]
 
 fleet = types[-1]
 
 
 #%%
-def f(ac: Aircraft, location, time, cargo, dest):
-    profit=0
+#function f definition
+@debug
+def f(ac: Aircraft, location, time, cargo, dest, demand):
+    #numpy array must be copied in recursion
+    demand = np.copy(demand)
+
+    if time>1200:
+        return -np.inf, None, None, None
+    
+    if time == 1200:
+        if location != hub:
+            return -np.inf, None, None, None
+        return 0, [location], [time], demand
 
     if dest == location:
-        pass
+        tt=1
 
+    profit=0
     #if flight does not visit hub
     if (location == hub) == (dest == hub) == False:
-        return -np.inf, None
+        return -np.inf, None, None, None
     else:
-        d = distances[location, hub]
+        #we gaan vliegen!!!!!
+        d = dist[location, hub]
         if d > ac.range or runways[dest] < ac.runway_length:
             #return infeasible if runway or range do not match.
-            return -np.inf, None
+            return -np.inf, None, None, None
         
         flight_hours = d/ac.speed
 
@@ -127,50 +137,47 @@ def f(ac: Aircraft, location, time, cargo, dest):
 
         profit = revenue - cost
 
-        #add 2*15 minutes takeoff & landing time, scale to model timescale
-        tt = (flight_hours+0.5)*10
-
+        #calc travel time. add 2*15 minutes takeoff & landing time, scale to model timescale.
+        #round up
+        tt = ceil((flight_hours+0.5)*10)
 
         #preparing for next step
         location = dest
 
-    p, route = max([f(ac, tt-1, location, time+1, cargo, dest) for dest in range(AP)], key = lambda x: x[0])
+    p, route, times, demand_res = max([f(ac, location, time+tt, cargo, dest, demand) for dest in range(AP)], key = lambda x: x[0])
+    return p + profit, [dest] + route, [time] + times, demand_res
 
-    return p + profit, [dest] + route
+#demand d_ijt demand in timeframe t from airport i to airport j.
 
-
-
-
-
-
-            
-            
-
-
-
-#demand d_tij demand in timeframe t from airport i to airport j.
-#TODO make a copy of demand to get 20% for past timeframes
-
-
+#%%
 stop = False
 while not stop:
     max_profit = -np.inf
+    opt_route = []
+    opt_times = []
 
-    for type in range(3):
-        if fleet(type) > 0:
-            ac = Aircraft(type)
-            #travel time left to reach location
-            tt = 0
+    for ac_type in range(3):
+        if fleet[ac_type] > 0:
+            ac = Aircraft(ac_type)
             location = hub
             time = 0
             cargo = np.zeros(AP)
-            profit = max([f(ac, tt, location, time, cargo, dest) for dest in range(AP)])
+            profit, route, times, demand_res = max([f(ac, location, time, cargo, dest, demand) for dest in range(AP)], key = lambda x: x[0])
 
-
-
+            if profit > max_profit:
+                max_profit = profit
+                opt_route = route
+                opt_times = times
+                opt_demand = demand_res
+                opt_ac_type = ac_type
 
     if np.any(fleet == 0) or max_profit < 0:
         stop = True
+    else:
+        demand = opt_demand
+        fleet[opt_ac_type] -=1
+
+
 
 
 # %%
