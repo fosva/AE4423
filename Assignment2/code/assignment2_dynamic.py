@@ -6,6 +6,7 @@ from debugger import debug
 import sys
 print(sys.getrecursionlimit())
 sys.setrecursionlimit(3800)
+sys.tracebacklimit = 2
 # Read the excel files
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
 fleet_options = pd.read_excel("FleetType.xlsx", index_col=0)
@@ -84,13 +85,14 @@ fleet = types[-1]
 def f(ac: Aircraft, location, time, cargo, dest, demand, depth = 0):
     infeasible = (-np.inf, None, None, None)
     #numpy array must be copied in recursion
-    demand = np.copy(demand)
+    
 
-    if time>1200:
+    timelimit = 20 #1200
+    if time > timelimit:
         #print("time's up")
         return infeasible
     
-    if time == 1200:
+    if time == timelimit:
         #print("1200")
         if location != hub:
             #print("aircraft not at hub")
@@ -126,7 +128,8 @@ def f(ac: Aircraft, location, time, cargo, dest, demand, depth = 0):
 
         #hoe laat is het
         timeslot = time//40
-        
+
+        demand = np.copy(demand)
         #First, take all possible cargo from 2 time slots ago
         if timeslot>1:
             load = min(demand[location, dest, timeslot-2], 0.2*total_demand[location, dest, timeslot-2], ac.capacity-cargo.sum())
@@ -209,3 +212,7 @@ while not stop:
 print(ac_types_res, result)
 
 #%%
+#TODO
+"""
+Het proces is nog niet 'markovian', omdat de state afhangt van de demand, en die hangt af van keuzes in het verleden.
+"""

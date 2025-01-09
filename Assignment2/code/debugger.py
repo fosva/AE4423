@@ -10,8 +10,7 @@ def debug(fn):
             depth = kwargs["depth"]
         #print(" "*(int(depth)//40) + f"depth: {depth}, aircraft type: {args[0].ac_type}, time: {time}, route: {args[1]} -> {args[4]}")
         result = fn(*args, **kwargs)
-        if result[0] > -np.inf:
-            print(" "*(depth//40) + f"depth: {depth}, aircraft type: {args[0].ac_type}, time: {time}, route: {args[1]} -> {args[4]}")
-            print(" "*(depth//40) + f"returned {result[:-1]}")
+        print(" "*(depth//40) + f"depth: {depth}, aircraft type: {args[0].ac_type}, time: {time}, route: {args[1]} -> {args[4]}")
+        print(" "*(depth//40) + f"returned {result[:-1]}")
         return result
     return wrapper
