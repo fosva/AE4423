@@ -1,5 +1,6 @@
 #%%
 import numpy as np
+import matplotlib.pyplot as plt
 import pandas as pd
 from math import pi, sqrt, sin, cos, ceil
 from debugger import debug
@@ -36,6 +37,15 @@ for i in range(AP):
             demand[i,j,k] = demand_df.loc[df_index, str(k)]
 # For example the demand from Airport 0 (LHR) to Airport 1 (CDG) for the 5th time slot
 total_demand = np.copy(demand)
+
+logbins = np.logspace(0, 6, 70)
+demand_nonzero = total_demand[total_demand.nonzero()].flatten()
+plt.hist(demand_nonzero, bins = logbins)
+plt.title('demand (log scale)')
+plt.xscale('log')
+
+plt.show()
+#%%
 radian = pi/180
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
 runways = airports.loc[["Runway (m)"]].to_numpy().flatten()
