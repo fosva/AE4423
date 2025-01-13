@@ -115,12 +115,19 @@ fleet = types[-1]
 #function f definition
 #@debug
 def f(ac: Aircraft, origin_id, time, dest_id, network):
+    print(origin_id, dest_id, time)
     infeasible = (-np.inf, None, None, None, None)
 
     profit=0
     #if aircraft stays at the same spot
     if dest_id == origin_id:
-        tt=1
+        profit = 0
+        if time+1 >= time_steps:
+            return infeasible
+        dest = network[dest_id][time+1]
+        demand = dest.demand.copy()
+        blocking_time = 0
+
 
     #aircraft does not visit hub
     elif (origin_id == hub) == (dest_id == hub) == False:
@@ -148,8 +155,8 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
                 return infeasible
         #Get origin and dest from network
         #Node objects
-        origin: Node = network[origin_id, time]
-        dest: Node = network[dest_id, ready_time]
+        origin: Node = network[origin_id][time]
+        dest: Node = network[dest_id][ready_time]
 
         cost = ac.fixed_cost + ac.hour_cost*flight_hours + ac.fuel_cost*fuel_price*d/1.5
 
@@ -183,7 +190,7 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
     #calc minimum block time requirement: 6 hours per day.
     #time from ending
     #blocking time is measured in 1h steps, time in 0.1h steps (6m).
-    inv_time = time_slots - time
+    inv_time = time_steps - time
     if 6*(inv_time//240) > blocking_time + dest.blocking_time:
         return infeasible
     return profit+dest.profit, [time] + dest.times, [dest.airpt] + dest.route, demand, blocking_time + dest.blocking_time
@@ -193,8 +200,8 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
 
 ac_types_res = []
 result = []
-tot_demand = demand_hub.copy()
 
+tot_demand = demand_hub.copy()
 tot_times = []
 tot_routes = []
 tot_profit = []
@@ -216,18 +223,18 @@ while not stop:
             #network_airpt,time gives the node connected to the given airport at the given time step (6m)
             network = [[Node(i, j) for j in range(time_steps)] for i in range(AP)]
             #set network demand at hub at time = 1200, based on demand found in previous iteration.
-            network[hub, -1].demand = tot_demand.copy()
+            network[hub][-1].demand = tot_demand.copy()
 
             #Loop over nodes backwards in time
             for time in range(time_steps-1, -1, -1):
                 for origin_id in range(AP):
 
-                    origin: Node = network[origin_id, time]
+                    origin: Node = network[origin_id][time]
                     #Given time and origin, find most profitable destination.
                     origin.profit, origin.times, origin.route, origin.demand, origin.blocking_time =\
                         max([f(ac, origin_id, time, dest, network) for dest in range(AP)], key = lambda x: x[0])
             #check if profit found at starting node exceeds previously found profit.
-            start_node: Node = network[hub,0]
+            start_node: Node = network[hub][0]
             if start_node.profit > opt_profit:
                 opt_demand = start_node.demand.copy()
                 opt_profit = start_node.profit
