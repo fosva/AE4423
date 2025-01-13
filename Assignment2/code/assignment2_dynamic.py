@@ -226,7 +226,7 @@ while not stop:
             network[hub][-1].demand = tot_demand.copy()
 
             #Loop over nodes backwards in time
-            for time in range(time_steps-1, -1, -1):
+            for time in range(time_steps-2, -1, -1):
                 for origin_id in range(AP):
 
                     origin: Node = network[origin_id][time]
