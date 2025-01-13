@@ -44,12 +44,7 @@ total_demand = np.copy(demand)
 
 logbins = np.logspace(0, 6, 70)
 demand_nonzero = total_demand[total_demand.nonzero()].flatten()
-"""
-plt.hist(demand_nonzero, bins = logbins)
-plt.title('demand (log scale)')
-plt.xscale('log')
-plt.show()
-"""
+
 #%%
 radian = pi/180
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
@@ -98,7 +93,7 @@ class Node:
         self.demand = None
         self.route = []
         self.times = []
-        self.profit = 0
+        self.profit = -np.inf
         self.blocking_time = 0
         self.is_hub = airpt == hub
 
@@ -118,10 +113,14 @@ fleet = types[-1]
 #@debug
 def f(ac: Aircraft, origin_id, time, dest_id, network):
     #print(origin_id, dest_id, time)
-    infeasible = (-np.inf, None, None, None, None)
+    infeasible = (-np.inf, None, None, None, None, None)
     status = "ok"
     profit=0
+    load=0
     #if aircraft stays at the same spot
+    if time == 0 and origin_id != hub:
+        return infeasible, "must start at hub"
+    
     if dest_id == origin_id:
         profit = 0
         if time+1 >= time_steps:
@@ -188,7 +187,7 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
             cargo += load
             demand[int(dest_id == hub), j, timeslot-2] -= load
 
-
+        #cargo in tonnes
         revenue = yield_coeff*d*cargo/1000
 
         profit = revenue - cost
@@ -199,8 +198,8 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
     inv_time = time_steps - time
     if 6*(inv_time//240) > blocking_time + dest.blocking_time:
         return infeasible, "blocking time limit"
-    
-    return [profit+dest.profit, [time] + dest.times, [dest.airpt] + dest.route, demand, blocking_time + dest.blocking_time], status+f", profit: {profit}"
+
+    return [profit+dest.profit, [time] + dest.times, [dest.airpt] + dest.route, demand, blocking_time + dest.blocking_time, load], status+f", profit: {profit}"
 
 #%%
 
@@ -211,6 +210,7 @@ tot_times = []
 tot_routes = []
 tot_profit = []
 tot_network = []
+tot_load = []
 
 stop = False
 while not stop:
@@ -221,8 +221,9 @@ while not stop:
     opt_demand = []
     opt_ac_type = -1
     opt_network = []
+    opt_load = 0
 
-    for ac_type in range(3):
+    for ac_type in range(len(fleet)):
         if fleet[ac_type] > 0:
             ac = Aircraft(ac_type)
 
@@ -237,23 +238,12 @@ while not stop:
 
                     origin: Node = network[origin_id][time]
                     #Given time and origin, find most profitable destination.
-                    origin.profit, origin.times, origin.route, origin.demand, origin.blocking_time =\
-                        max([f(ac, origin_id, time, dest, network) for dest in range(AP)], key = lambda x: x[0])
-                if time == 0:
-                    origin.profit -= ac.lease_cost
+                    if time == 0:
+                        origin.profit -= ac.lease_cost
                     res = [f(ac, origin_id, time, dest, network) for dest in range(AP)]
-                    [origin.profit, origin.times, origin.route, origin.demand, origin.blocking_time], status =\
+                    [origin.profit, origin.times, origin.route, origin.demand, origin.blocking_time, load], status =\
                         max(res, key = lambda x: x[0][0])
-                    """
-                    if time == 960 and origin_id in [2,3,4]:
-                        print(time, origin_id)
-                        print(res)
-                        print(origin.profit)
-                        print(network[origin_id][time].profit)
-                        if origin_id == 4:
-                            raise Exception("stop")
-                print(time, [np.round(network[airpt][time].profit) for airpt in range(AP)])
-            """
+                    
             #check if profit found at starting node exceeds previously found profit.
             start_node: Node = network[hub][0]
             if start_node.profit > opt_profit:
@@ -263,8 +253,9 @@ while not stop:
                 opt_times = start_node.times
                 opt_route = start_node.route
                 opt_network = network
+                opt_load = load
 
-
+    
     if np.all(fleet == 0) or opt_profit < 0:
         stop = True
     else:
@@ -276,14 +267,19 @@ while not stop:
         tot_routes.append(opt_route)
         tot_profit.append(opt_profit)
         tot_network.append(opt_network)
+        tot_load.append(opt_load)
 
-print(ac_types_res,tot_times, tot_routes, tot_profit , sep="\n")
+#print(ac_types_res,tot_times, tot_routes, tot_profit , sep="\n")
 
 #%%
 a = np.array([[node.profit for node in times] for times in tot_network[0]])
-fig, ax = plt.subplots(2,1)
+fig, ax = plt.subplots(3,1)
 ax[0].plot(range(time_slots), demand_hub.sum(axis = (0,1)))
 ax[1].imshow(a, aspect = "auto", interpolation = "nearest")
+route = [3]+tot_routes[0]
+times = tot_times[0]+[1199]
+ax[1].plot(times, route, color = 'red')
+ax[2].plot(tot_load)
 plt.show()
 
 
