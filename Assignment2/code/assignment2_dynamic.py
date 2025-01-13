@@ -5,7 +5,6 @@ import pandas as pd
 from math import pi, sqrt, sin, cos, ceil
 from debugger import debug
 import sys
-np.set_printoptions(threshold=30)#sys.maxsize)
 
 # Read the excel files
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
@@ -45,10 +44,12 @@ total_demand = np.copy(demand)
 
 logbins = np.logspace(0, 6, 70)
 demand_nonzero = total_demand[total_demand.nonzero()].flatten()
+"""
 plt.hist(demand_nonzero, bins = logbins)
 plt.title('demand (log scale)')
 plt.xscale('log')
-#plt.show()
+plt.show()
+"""
 #%%
 radian = pi/180
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
@@ -199,18 +200,17 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
     if 6*(inv_time//240) > blocking_time + dest.blocking_time:
         return infeasible, "blocking time limit"
     
-    return [profit+dest.profit, [time] + dest.times, [dest.airpt] + dest.route, demand, blocking_time + dest.blocking_time], status
+    return [profit+dest.profit, [time] + dest.times, [dest.airpt] + dest.route, demand, blocking_time + dest.blocking_time], status+f", profit: {profit}"
 
 #%%
 
-
 ac_types_res = []
-result = []
 
 tot_demand = demand_hub.copy()
 tot_times = []
 tot_routes = []
 tot_profit = []
+tot_network = []
 
 stop = False
 while not stop:
@@ -220,7 +220,7 @@ while not stop:
     opt_blocking_time = 0
     opt_demand = []
     opt_ac_type = -1
-
+    opt_network = []
 
     for ac_type in range(3):
         if fleet[ac_type] > 0:
@@ -240,15 +240,25 @@ while not stop:
                     res = [f(ac, origin_id, time, dest, network) for dest in range(AP)]
                     [origin.profit, origin.times, origin.route, origin.demand, origin.blocking_time], status =\
                         max(res, key = lambda x: x[0][0])
-                    if time ==99 and origin_id == 3:
+                    """
+                    if time == 960 and origin_id in [2,3,4]:
+                        print(time, origin_id)
                         print(res)
-                        raise Exception("stop")
+                        print(origin.profit)
+                        print(network[origin_id][time].profit)
+                        if origin_id == 4:
+                            raise Exception("stop")
+                print(time, [np.round(network[airpt][time].profit) for airpt in range(AP)])
+            """
             #check if profit found at starting node exceeds previously found profit.
             start_node: Node = network[hub][0]
             if start_node.profit > opt_profit:
                 opt_demand = start_node.demand.copy()
                 opt_profit = start_node.profit
                 opt_ac_type = ac_type
+                opt_times = start_node.times
+                opt_route = start_node.route
+                opt_network = network
 
 
     if np.all(fleet == 0) or opt_profit < 0:
@@ -258,11 +268,19 @@ while not stop:
         tot_demand = opt_demand
         fleet[opt_ac_type] -=1
         ac_types_res.append(opt_ac_type)
-        result.append([opt_times, opt_route])
         tot_times.append(opt_times)
         tot_routes.append(opt_route)
         tot_profit.append(opt_profit)
+        tot_network.append(opt_network)
 
-print(ac_types_res, result)
+print(ac_types_res,tot_times, tot_routes, tot_profit , sep="\n")
 
 #%%
+a = np.array([[node.profit for node in times] for times in tot_network[0]])
+fig, ax = plt.subplots(2,1)
+ax[0].plot(range(time_slots), demand_hub.sum(axis = (0,1)))
+ax[1].imshow(a, aspect = "auto", interpolation = "nearest")
+plt.show()
+
+
+# %%
