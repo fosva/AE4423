@@ -92,7 +92,7 @@ class Node:
         self.airpt = airpt
         self.time = time
         self.timeslot = time//40
-        self.demand = []
+        self.demand = None
         self.route = []
         self.times = []
         self.profit = 0
@@ -113,7 +113,7 @@ fleet = types[-1]
 #%%
 
 #function f definition
-@debug
+#@debug
 def f(ac: Aircraft, origin_id, time, dest_id, network):
     #print(origin_id, dest_id, time)
     infeasible = (-np.inf, None, None, None, None)
@@ -125,6 +125,8 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
         if time+1 >= time_steps:
             return infeasible
         dest = network[dest_id][time+1]
+        if dest.demand is None:
+            return infeasible
         demand = dest.demand.copy()
         blocking_time = 0
 
@@ -162,26 +164,29 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
 
         #We choose to go to the destination dest. The optimal route from that point on has a demand table associated with it. 
         # This is the one we make calculations with, and then store in the origin Node.
+        if dest.demand is None:
+            return infeasible
         demand = dest.demand.copy()
         timeslot = origin.timeslot
 
         cargo = 0
+        j = origin_id if origin_id == hub else dest_id
         #Firstly, take all possible cargo from current time slot
-        load = min(demand[origin_id, dest_id, timeslot], ac.capacity-cargo)
+        load = min(demand[int(dest_id==hub), j, timeslot], ac.capacity-cargo)
         cargo += load
-        demand[origin_id, dest_id, timeslot] -= load
+        demand[int(dest_id == hub), j, timeslot] -= load
 
         #Take all possible cargo from previous time slot
         if timeslot>0:
-            load = min(demand[origin_id, dest_id, timeslot-1], ac.capacity - cargo, 0.2*total_demand[origin_id, dest_id, timeslot-1])
+            load = min(demand[int(dest_id == hub), j, timeslot-1], ac.capacity - cargo, 0.2*total_demand[origin_id, dest_id, timeslot-1])
             cargo += load
-            demand[origin_id, dest_id, timeslot-1] -= load
+            demand[int(dest_id == hub), j, timeslot-1] -= load
 
         #Take all possible cargo from 2 time slots ago
         if timeslot>1:
-            load = min(demand[origin_id, dest_id, timeslot-2], ac.capacity-cargo, 0.2*total_demand[origin_id, dest_id, timeslot-2])
+            load = min(demand[int(dest_id == hub), j, timeslot-2], ac.capacity-cargo, 0.2*total_demand[origin_id, dest_id, timeslot-2])
             cargo += load
-            demand[origin_id, dest_id, timeslot-2] -= load
+            demand[int(dest_id == hub), j, timeslot-2] -= load
 
         revenue = yield_coeff*d*cargo
 
@@ -193,6 +198,7 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
     inv_time = time_steps - time
     if 6*(inv_time//240) > blocking_time + dest.blocking_time:
         return infeasible
+    
     return profit+dest.profit, [time] + dest.times, [dest.airpt] + dest.route, demand, blocking_time + dest.blocking_time
 
 #%%
