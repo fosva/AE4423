@@ -4,10 +4,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from math import pi, sqrt, sin, cos, ceil
 from debugger import debug
-import sys
-print(sys.getrecursionlimit())
-sys.setrecursionlimit(3800)
-sys.tracebacklimit = 2
+
 # Read the excel files
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
 fleet_options = pd.read_excel("FleetType.xlsx", index_col=0)
@@ -15,27 +12,33 @@ demand_df = pd.read_excel("Group35.xlsx", skiprows=range(1,5), index_col=0)
 
 #number of airports
 AP = len(airports.columns)
+#number of time steps (120h divided in 10 steps per hour)
+time_steps = 1200
+#30 time slots taking 4h each.
+time_slots = 30
 
-#%%
-# Simplify column names for better indexing
 fleet_columns = [col.split(':')[0] for col in fleet_options.columns]
 fleet_options.columns = fleet_columns
 demand_columns = ["Origin", "Destination"] + [str(i) for i in range(30)]
 demand_df.columns = demand_columns
 
-# examples of how to access data
-#print(Airports.loc['Latitude (deg)', 'London'])
-#print(FleetOptions.loc["Speed [km/h]", 'Type 1'])
-#print(Demand_df.loc[3,str(5)])
-
 # Restructure the demand data into a 3D array
-demand = np.zeros((AP, AP,30))
+#demand_ijk is the demand from airport i to airport j in timeslot k.
+demand = np.zeros((AP, AP, time_slots))
 for i in range(AP):
     for j in range(AP):
         for k in range(30):
             df_index = i * 20 + j + 1
             demand[i,j,k] = demand_df.loc[df_index, str(k)]
-# For example the demand from Airport 0 (LHR) to Airport 1 (CDG) for the 5th time slot
+
+#Demand is given per route and connection of cargo at hub is already considered,
+# so we only need to take into account cargo directly to and from hub.
+#demand_hub_ijk denotes (i=0 outgoing, i=1 incoming) demand at hub relative to airport j, at timeslot k.
+#accesed as demand_hub[dest==hub, j, k]
+demand_hub = np.array([demand[0], demand[:,0]])
+
+#%%
+
 total_demand = np.copy(demand)
 
 logbins = np.logspace(0, 6, 70)
@@ -43,8 +46,7 @@ demand_nonzero = total_demand[total_demand.nonzero()].flatten()
 plt.hist(demand_nonzero, bins = logbins)
 plt.title('demand (log scale)')
 plt.xscale('log')
-
-plt.show()
+#plt.show()
 #%%
 radian = pi/180
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
@@ -79,6 +81,25 @@ types = aircraft_types.to_numpy()
 #index 3 is FRA, our hub
 hub = 3
 
+class Node:
+    """
+    The Node class represents a node in the network of airports. When the optimal policy given a certain node is evaluated,
+    all followup nodes are compared, in the comparison. The potential destination nodes' parameters are used to calculate
+    profit, which is then used to find the best destination. The destination's parameters are copied and modified, then added to the current node.
+    """
+    def __init__(self, airpt, time):
+        """sd"""
+        self.airpt = airpt
+        self.time = time
+        self.timeslot = time//40
+        self.demand = []
+        self.route = []
+        self.times = []
+        self.profit = 0
+        self.blocking_time = 0
+        self.is_hub = airpt == hub
+
+
 class Aircraft:
     def __init__(self, ac_type):
         self.speed, self.capacity, self.tat, self.range,\
@@ -90,139 +111,141 @@ fleet = types[-1]
 
 
 #%%
+
 #function f definition
 #@debug
-def f(ac: Aircraft, location, time, cargo, dest, demand, depth = 0):
-    infeasible = (-np.inf, None, None, None)
-    #numpy array must be copied in recursion
-    
-
-    timelimit = 20 #1200
-    if time > timelimit:
-        #print("time's up")
-        return infeasible
-    
-    if time == timelimit:
-        #print("1200")
-        if location != hub:
-            #print("aircraft not at hub")
-            return infeasible
-        return 0, [location], [time], demand
-
-    
+def f(ac: Aircraft, origin_id, time, dest_id, network):
+    infeasible = (-np.inf, None, None, None, None)
 
     profit=0
     #if aircraft stays at the same spot
-    if dest == location:
+    if dest_id == origin_id:
         tt=1
+
     #aircraft does not visit hub
-    elif (location == hub) == (dest == hub) == False:
+    elif (origin_id == hub) == (dest_id == hub) == False:
         #print("Flight does not visit hub")
         return infeasible
     else:
         #we gaan vliegen!!!!!
-        d = dist[location, dest]
-        if d > ac.range or runways[dest] < ac.runway_length:
+        d = dist[origin_id, dest_id]
+        if d > ac.range or runways[dest_id] < ac.runway_length:
             #return infeasible if runway or range do not match.
             #print("Range or runway constraint not met")
             return infeasible
         
+        #in 1h
         flight_hours = d/ac.speed
+        #in 1h
+        blocking_time = flight_hours + 0.5
+        #in 0.1h (6m)
+        ready_time = time + ceil(10*(blocking_time + ac.tat))
+        
+        if ready_time >= time_steps:
+            return infeasible
+        if ready_time == time_steps-1:
+            if dest_id != hub:
+                return infeasible
+        #Get origin and dest from network
+        #Node objects
+        origin: Node = network[origin_id, time]
+        dest: Node = network[dest_id, ready_time]
 
         cost = ac.fixed_cost + ac.hour_cost*flight_hours + ac.fuel_cost*fuel_price*d/1.5
 
-        #uitladen @location (niet dest)
-        cargo[location] = 0
+        #We choose to go to the destination dest. The optimal route from that point on has a demand table associated with it. 
+        # This is the one we make calculations with, and then store in the origin Node.
+        demand = dest.demand.copy()
+        timeslot = origin.timeslot
 
-        #inladen @location (niet dest)
-
-        #hoe laat is het
-        timeslot = time//40
-
-        demand = np.copy(demand)
-        #First, take all possible cargo from 2 time slots ago
-        if timeslot>1:
-            load = min(demand[location, dest, timeslot-2], 0.2*total_demand[location, dest, timeslot-2], ac.capacity-cargo.sum())
-            cargo[dest] += load
-            demand[location, dest, timeslot-2] -= load
+        cargo = 0
+        #Firstly, take all possible cargo from current time slot
+        load = min(demand[origin_id, dest_id, timeslot], ac.capacity-cargo)
+        cargo += load
+        demand[origin_id, dest_id, timeslot] -= load
 
         #Take all possible cargo from previous time slot
         if timeslot>0:
-            load = min(demand[location, dest, timeslot-1], 0.2*total_demand[location, dest, timeslot-1], ac.capacity - cargo.sum())
-            cargo[dest] += load
-            demand[location, dest, timeslot-1] -= load
+            load = min(demand[origin_id, dest_id, timeslot-1], ac.capacity - cargo, 0.2*total_demand[origin_id, dest_id, timeslot-1])
+            cargo += load
+            demand[origin_id, dest_id, timeslot-1] -= load
 
-        #take all possible cargo from current time slot
-        load = min(demand[location, dest, timeslot], ac.capacity-cargo.sum())
-        cargo[dest] += load
-        demand[location, dest, timeslot] -= load
+        #Take all possible cargo from 2 time slots ago
+        if timeslot>1:
+            load = min(demand[origin_id, dest_id, timeslot-2], ac.capacity-cargo, 0.2*total_demand[origin_id, dest_id, timeslot-2])
+            cargo += load
+            demand[origin_id, dest_id, timeslot-2] -= load
 
-        revenue = yield_coeff*d*cargo.sum()
+        revenue = yield_coeff*d*cargo
 
         profit = revenue - cost
-
-        #calc travel time. add 2*15 minutes takeoff & landing time, scale to model timescale.
-        #round up
-        tt = ceil((flight_hours+0.5)*10)
-        #print(f"flight hours:{flight_hours}, time slot: {timeslot}, tt:{tt}")
-        #preparing for next step
-        location = dest
-    
-    outcomes = [f(ac, location, time+tt, cargo, dest, demand, depth = depth+1) for dest in range(AP)]
-
-    p, route, times, demand_res =\
-        max(outcomes, key = lambda x: x[0])
-    if p == -np.inf:
+    #TODO figure out blocking time calculation.
+    #calc minimum block time requirement: 6 hours per day.
+    #time from ending
+    #blocking time is measured in 1h steps, time in 0.1h steps (6m).
+    inv_time = time_slots - time
+    if 6*(inv_time//240) > blocking_time + dest.blocking_time:
         return infeasible
-    
-    profit_res = p + profit
-    route_res = [dest] + route
-    times_res = [time] + times
-
-    return profit_res, route_res, times_res, demand_res
-
-#demand d_ijt demand in timeframe t from airport i to airport j.
+    return profit+dest.profit, [time] + dest.times, [dest.airpt] + dest.route, demand, blocking_time + dest.blocking_time
 
 #%%
-stop = False
+
 
 ac_types_res = []
 result = []
+tot_demand = demand_hub.copy()
+
+tot_times = []
+tot_routes = []
+tot_profit = []
+
+stop = False
 while not stop:
-    max_profit = -np.inf
-    opt_route = []
+    opt_profit = -np.inf
     opt_times = []
-    opt_demand = total_demand.copy()
+    opt_route = []
+    opt_blocking_time = 0
+    opt_demand = []
+    opt_ac_type = -1
+
 
     for ac_type in range(3):
         if fleet[ac_type] > 0:
             ac = Aircraft(ac_type)
-            location = hub
-            time = 0
-            cargo = np.zeros(AP)
-            profit, route, times, demand_res =\
-                max([f(ac, location, time, cargo, dest, demand) for dest in range(AP)],\
-                                                   key = lambda x: x[0])
 
-            if profit > max_profit:
-                max_profit = profit
-                opt_route = route
-                opt_times = times
-                opt_demand = demand_res
+            #network_airpt,time gives the node connected to the given airport at the given time step (6m)
+            network = [[Node(i, j) for j in range(time_steps)] for i in range(AP)]
+            #set network demand at hub at time = 1200, based on demand found in previous iteration.
+            network[hub, -1].demand = tot_demand.copy()
+
+            #Loop over nodes backwards in time
+            for time in range(time_steps-1, -1, -1):
+                for origin_id in range(AP):
+
+                    origin: Node = network[origin_id, time]
+                    #Given time and origin, find most profitable destination.
+                    origin.profit, origin.times, origin.route, origin.demand, origin.blocking_time =\
+                        max([f(ac, origin_id, time, dest, network) for dest in range(AP)], key = lambda x: x[0])
+            #check if profit found at starting node exceeds previously found profit.
+            start_node: Node = network[hub,0]
+            if start_node.profit > opt_profit:
+                opt_demand = start_node.demand.copy()
+                opt_profit = start_node.profit
                 opt_ac_type = ac_type
 
-    if np.all(fleet == 0) or max_profit < 0:
+
+    if np.all(fleet == 0) or opt_profit < 0:
         stop = True
     else:
-        demand = opt_demand
+        #update all totals found
+        tot_demand = opt_demand
         fleet[opt_ac_type] -=1
         ac_types_res.append(opt_ac_type)
         result.append([opt_times, opt_route])
+        tot_times.append(opt_times)
+        tot_routes.append(opt_route)
+        tot_profit.append(opt_profit)
 
 print(ac_types_res, result)
 
 #%%
-#TODO
-"""
-Het proces is nog niet 'markovian', omdat de state afhangt van de demand, en die hangt af van keuzes in het verleden.
-"""
