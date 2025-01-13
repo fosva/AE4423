@@ -113,9 +113,9 @@ fleet = types[-1]
 #%%
 
 #function f definition
-#@debug
+@debug
 def f(ac: Aircraft, origin_id, time, dest_id, network):
-    print(origin_id, dest_id, time)
+    #print(origin_id, dest_id, time)
     infeasible = (-np.inf, None, None, None, None)
 
     profit=0
