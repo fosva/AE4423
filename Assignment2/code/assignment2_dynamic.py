@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from math import pi, sqrt, sin, cos, ceil
 from debugger import debug
+import sys
+np.set_printoptions(threshold=30)#sys.maxsize)
 
 # Read the excel files
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
@@ -99,7 +101,6 @@ class Node:
         self.blocking_time = 0
         self.is_hub = airpt == hub
 
-
 class Aircraft:
     def __init__(self, ac_type):
         self.speed, self.capacity, self.tat, self.range,\
@@ -117,16 +118,16 @@ fleet = types[-1]
 def f(ac: Aircraft, origin_id, time, dest_id, network):
     #print(origin_id, dest_id, time)
     infeasible = (-np.inf, None, None, None, None)
-
+    status = "ok"
     profit=0
     #if aircraft stays at the same spot
     if dest_id == origin_id:
         profit = 0
         if time+1 >= time_steps:
-            return infeasible
+            return infeasible, f"above {time_steps}"
         dest = network[dest_id][time+1]
         if dest.demand is None:
-            return infeasible
+            return infeasible, f"no dest demand"
         demand = dest.demand.copy()
         blocking_time = 0
 
@@ -134,27 +135,25 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
     #aircraft does not visit hub
     elif (origin_id == hub) == (dest_id == hub) == False:
         #print("Flight does not visit hub")
-        return infeasible
+        return infeasible, "flight does not visit hub"
     else:
         #we gaan vliegen!!!!!
         d = dist[origin_id, dest_id]
         if d > ac.range or runways[dest_id] < ac.runway_length:
             #return infeasible if runway or range do not match.
             #print("Range or runway constraint not met")
-            return infeasible
+            return infeasible, "infeasible distance or runway"
         
         #in 1h
         flight_hours = d/ac.speed
         #in 1h
         blocking_time = flight_hours + 0.5
         #in 0.1h (6m)
-        ready_time = time + ceil(10*(blocking_time + ac.tat))
+        ready_time = time + ceil(10*(blocking_time + ac.tat/60))
         
         if ready_time >= time_steps:
-            return infeasible
-        if ready_time == time_steps-1:
-            if dest_id != hub:
-                return infeasible
+            return infeasible, f"above {time_steps}"
+
         #Get origin and dest from network
         #Node objects
         origin: Node = network[origin_id][time]
@@ -165,7 +164,7 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
         #We choose to go to the destination dest. The optimal route from that point on has a demand table associated with it. 
         # This is the one we make calculations with, and then store in the origin Node.
         if dest.demand is None:
-            return infeasible
+            return infeasible, "no dest demand"
         demand = dest.demand.copy()
         timeslot = origin.timeslot
 
@@ -188,18 +187,19 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
             cargo += load
             demand[int(dest_id == hub), j, timeslot-2] -= load
 
-        revenue = yield_coeff*d*cargo
+        
+        revenue = yield_coeff*d*cargo/1000
 
         profit = revenue - cost
-    #TODO figure out blocking time calculation.
+
     #calc minimum block time requirement: 6 hours per day.
     #time from ending
     #blocking time is measured in 1h steps, time in 0.1h steps (6m).
     inv_time = time_steps - time
     if 6*(inv_time//240) > blocking_time + dest.blocking_time:
-        return infeasible
+        return infeasible, "blocking time limit"
     
-    return profit+dest.profit, [time] + dest.times, [dest.airpt] + dest.route, demand, blocking_time + dest.blocking_time
+    return [profit+dest.profit, [time] + dest.times, [dest.airpt] + dest.route, demand, blocking_time + dest.blocking_time], status
 
 #%%
 
@@ -237,8 +237,12 @@ while not stop:
 
                     origin: Node = network[origin_id][time]
                     #Given time and origin, find most profitable destination.
-                    origin.profit, origin.times, origin.route, origin.demand, origin.blocking_time =\
-                        max([f(ac, origin_id, time, dest, network) for dest in range(AP)], key = lambda x: x[0])
+                    res = [f(ac, origin_id, time, dest, network) for dest in range(AP)]
+                    [origin.profit, origin.times, origin.route, origin.demand, origin.blocking_time], status =\
+                        max(res, key = lambda x: x[0][0])
+                    if time ==99 and origin_id == 3:
+                        print(res)
+                        raise Exception("stop")
             #check if profit found at starting node exceeds previously found profit.
             start_node: Node = network[hub][0]
             if start_node.profit > opt_profit:
