@@ -187,7 +187,7 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
             cargo += load
             demand[int(dest_id == hub), j, timeslot-2] -= load
 
-        
+
         revenue = yield_coeff*d*cargo/1000
 
         profit = revenue - cost
@@ -198,7 +198,7 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
     inv_time = time_steps - time
     if 6*(inv_time//240) > blocking_time + dest.blocking_time:
         return infeasible, "blocking time limit"
-    
+
     return [profit+dest.profit, [time] + dest.times, [dest.airpt] + dest.route, demand, blocking_time + dest.blocking_time], status
 
 #%%
@@ -237,6 +237,10 @@ while not stop:
 
                     origin: Node = network[origin_id][time]
                     #Given time and origin, find most profitable destination.
+                    origin.profit, origin.times, origin.route, origin.demand, origin.blocking_time =\
+                        max([f(ac, origin_id, time, dest, network) for dest in range(AP)], key = lambda x: x[0])
+                if time == 0:
+                    origin.profit -= ac.lease_cost
                     res = [f(ac, origin_id, time, dest, network) for dest in range(AP)]
                     [origin.profit, origin.times, origin.route, origin.demand, origin.blocking_time], status =\
                         max(res, key = lambda x: x[0][0])
