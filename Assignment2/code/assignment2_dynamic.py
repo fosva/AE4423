@@ -86,7 +86,6 @@ class Node:
     profit, which is then used to find the best destination. The destination's parameters are copied and modified, then added to the current node.
     """
     def __init__(self, airpt, time):
-        """sd"""
         self.airpt = airpt
         self.time = time
         self.timeslot = time//40
@@ -169,7 +168,7 @@ def f(ac: Aircraft, origin_id, time, dest_id, network):
         timeslot = origin.timeslot
 
         cargo = 0
-        j = origin_id if origin_id == hub else dest_id
+        j = origin_id if origin_id != hub else dest_id
         #Firstly, take all possible cargo from current time slot
         load = min(demand[int(dest_id==hub), j, timeslot], ac.capacity-cargo)
         cargo += load
