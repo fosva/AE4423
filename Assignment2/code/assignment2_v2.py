@@ -72,7 +72,7 @@ class Node:
     """
     def __init__(self, airpt, time, block):
         self.airpt = airpt
-        self.time = time
+        self.time = time  #timestep of the node
         self.block = block #total block time so far (part of system state)
         self.time_slot = time//40
         self.demand = None
@@ -93,16 +93,20 @@ class Node:
         profit = 0
         cargo = np.zeros(AP)
 
+        # if aircraft stays at the same airport, destination is at next timestep and demand is copied
         if self.airpt == dest_airpt:
             #aircraft stays on ground
             dest = network[dest_airpt][self.block][self.time+1]
             demand = dest.demand.copy()
 
+        # if neither origin nor destination is the hub, the flight is infeasible
         elif (not self.is_hub) and (dest_airpt != hub):
             return infeasible, "flight does not visit hub"
-        
+
+        # if flight is feasible
         else:
             #we gaan vliegen
+            # check runway and range constraints, return infeasible if not satisfied
             if runways[dest_airpt] < ac.runway_length:
                 return infeasible, "infeasible runway length"
             
@@ -110,7 +114,7 @@ class Node:
             if d > ac.range:
                 return infeasible, "infeasible range"
             
-
+            # compute travel time to update block time and
             #flight time in hours
             flight_hours = d/ac.speed
             #flight time in 0.1h (6m)
