@@ -76,8 +76,7 @@ class Node:
         self.block = block #total block time so far (part of system state)
         self.time_slot = time//40
         self.demand = None
-        self.cargo = np.zeros(AP)
-        self.route = []
+        self.route = [airpt]
         self.times = []
         self.cargos = []
         self.profit = -np.inf
@@ -90,31 +89,36 @@ class Node:
         status = "ok"
         dest: Node
 
+        
+        profit = 0
+        cargo = np.zeros(AP)
+
         if self.airpt == dest_airpt:
-            pass
-            #TODO: no profit, no cargo, ready_time = 1, block_time = 0
-            profit = 0
+            #aircraft stays on ground
             dest = network[dest_airpt][self.block][self.time+1]
+            demand = dest.demand.copy()
+
         elif (not self.is_hub) and (dest_airpt != hub):
             return infeasible, "flight does not visit hub"
+        
         else:
+            #we gaan vliegen
             if runways[dest_airpt] < ac.runway_length:
                 return infeasible, "infeasible runway length"
             
-            #we gaan vliegen
             d = dist[self.airpt, dest_airpt]
             if d > ac.range:
                 return infeasible, "infeasible range"
             
+
             #flight time in hours
             flight_hours = d/ac.speed
             #flight time in 0.1h (6m)
             flight_time = 10*flight_hours
 
-            #add 30m to find block time
+            #add 30m to calc block time
             block_time = flight_time + 5
             ready_time = self.time + ceil(block_time + ac.tat/6)
-            
 
             if ready_time > time_steps:
                 return infeasible, "time is up"
@@ -140,10 +144,7 @@ class Node:
             if dest.profit == -np.inf:
                 return infeasible, "dest not discovered."
 
-            #copy dest (total)demand in order to modify.
-            demand = dest.demand.copy()
-            profit = 0
-            cargo = np.zeros(AP)
+            demand = dest.demand.copy()         
 
             if self.time_slot > 3:
                 #load factors of previous time slots
@@ -155,14 +156,16 @@ class Node:
                     cargo[dest.airpt] += load
                     demand[self.time_slot-j, self.airpt, dest.airpt] -= load
 
+                dest_cargo = dest.cargos[0].copy
                 for j in range(3):
                     load = min(demand[self.time_slot-j, self.airpt, dest.next.airpt],\
-                               ac.capacity - max(cargo.sum(), dest.cargo.sum()),\
+                               ac.capacity - max(cargo.sum(), dest_cargo.sum()),\
                                factors[j]*total_demand[self.time_slot-j, self.airpt, dest.next.airpt])
                     cargo[dest.next.airpt] += load
-                    dest.cargo[dest.next.airpt] += load
+                    dest_cargo[dest.next.airpt] += load
                     demand[self.time_slot-j, self.airpt, dest.next.airpt] -= load
-                    profit += dest.update_profit()
+
+                dest.update_profit(dest_cargo)
 
             revenue = yield_coeff*d*cargo.sum()/1000
 
@@ -175,7 +178,15 @@ class Node:
             cargos = [cargo] + dest.cargos
 
             profit += dest.profit
-        return profit, ((route, times, cargo), demand), status
-        #TODO time slot based demand???? moeilijk
-# %%
+        return profit, ((route, times, cargos), demand), status
 
+    def update_profit(self, cargo):
+        cargo_diff = cargo - self.cargos[0]
+        revenue = yield_coeff*d*cargo_diff.sum()
+        self.cargos[0] = cargo
+        self.profit += revenue
+
+    def update(self):
+        pass
+
+# %%
