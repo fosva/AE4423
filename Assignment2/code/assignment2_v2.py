@@ -51,10 +51,7 @@ yield_coeff = 0.26
 hub = 3
 min_block = 60 #in 0.1h (6m)
 
-
 #%%
-
-
 class Aircraft:
     def __init__(self, ac_type):
         self.speed, self.capacity, self.tat, self.range,\
@@ -91,10 +88,13 @@ class Node:
     def profit(self, network, ac: Aircraft, dest_airpt):
         infeasible = (-np.inf, (None,))
         status = "ok"
+        dest: Node
 
         if self.airpt == dest_airpt:
             pass
             #TODO: no profit, no cargo, ready_time = 1, block_time = 0
+            profit = 0
+            dest = network[dest_airpt][self.block][self.time+1]
         elif (not self.is_hub) and (dest_airpt != hub):
             return infeasible, "flight does not visit hub"
         else:
@@ -114,31 +114,37 @@ class Node:
             #add 30m to find block time
             block_time = flight_time + 5
             ready_time = self.time + ceil(block_time + ac.tat/6)
-            #subtract block time, since we are going in reverse
-            block_dest = self.block - int(block_time)
+            
 
             if ready_time > time_steps:
                 return infeasible, "time is up"
-            if block_dest < 0:
-                return infeasible, "block time infeasible"
             
-            dest: Node = network[dest_airpt][block_dest][ready_time]
-
+            
             #at the end of 24h, check if the block time limit is satisfied
             #If current time and ready time are not in the same 24h block:
             if self.time//240 != ready_time//240:
+                #self.block should be reset to 0. All other cases are infeasible.
                 if self.block != 0:
                     return infeasible, "reset block time"
-                #choose 
-                dest: Node = max([network[dest_airpt][b][ready_time] for b in range(min_block, 240)], key = lambda x: x.profit)
-            
+                #choose the node that satisfies dest_airpt and ready time and maximizes profit.
+                dest = max([network[dest_airpt][b][ready_time] for b in range(min_block, 240)], key = lambda x: x.profit)
+            else:
+                #subtract block time, since we are going in reverse
+                block_dest = self.block - int(block_time)
+                if block_dest < 0:
+                    return infeasible, "block time infeasible"
+                dest = network[dest_airpt][block_dest][ready_time]
+
+            #now the Node dest has been defined, only use dest.airpt instead of dest_airpt
+
             if dest.profit == -np.inf:
                 return infeasible, "dest not discovered."
 
             #copy dest (total)demand in order to modify.
             demand = dest.demand.copy()
-
+            profit = 0
             cargo = np.zeros(AP)
+
             if self.time_slot > 3:
                 #load factors of previous time slots
                 factors = [1, 0.2, 0.2]
@@ -156,22 +162,20 @@ class Node:
                     cargo[dest.next.airpt] += load
                     dest.cargo[dest.next.airpt] += load
                     demand[self.time_slot-j, self.airpt, dest.next.airpt] -= load
-                    dest.update_profit()
+                    profit += dest.update_profit()
 
             revenue = yield_coeff*d*cargo.sum()/1000
 
             cost = ac.fixed_cost + ac.hour_cost*flight_hours + ac.fuel_cost*fuel_price*d/1.5
 
-            profit = revenue - cost
+            profit += revenue - cost
 
-            
-                
+            route = [self.airpt] + dest.route
+            times = [self.time] + dest.times
+            cargos = [cargo] + dest.cargos
 
-            
-
-
-
-        return profit, (route, demand), status
-        #TODO if time % 240 == 0: self.block = 0;
+            profit += dest.profit
+        return profit, ((route, times, cargo), demand), status
         #TODO time slot based demand???? moeilijk
 # %%
+
