@@ -77,14 +77,14 @@ class Node:
         self.time_slot = time//40
         self.demand = None
         self.route = [airpt]
-        self.times = []
-        self.cargos = []
+        self.times = [time]
+        self.cargos = [np.zeros(AP)]
         self.profit = -np.inf
         self.is_hub = airpt == hub
         self.next: Node = None
 
 
-    def profit(self, network, ac: Aircraft, dest_airpt):
+    def calc_profit(self, network, ac: Aircraft, dest_airpt):
         infeasible = (-np.inf, (None,))
         status = "ok"
         dest: Node
@@ -155,17 +155,17 @@ class Node:
                                 factors[j]*total_demand[self.time_slot-j, self.airpt, dest.airpt])
                     cargo[dest.airpt] += load
                     demand[self.time_slot-j, self.airpt, dest.airpt] -= load
+                if dest.next is not None:
+                    dest_cargo = dest.cargos[0].copy
+                    for j in range(3):
+                        load = min(demand[self.time_slot-j, self.airpt, dest.next.airpt],\
+                                ac.capacity - max(cargo.sum(), dest_cargo.sum()),\
+                                factors[j]*total_demand[self.time_slot-j, self.airpt, dest.next.airpt])
+                        cargo[dest.next.airpt] += load
+                        dest_cargo[dest.next.airpt] += load
+                        demand[self.time_slot-j, self.airpt, dest.next.airpt] -= load
 
-                dest_cargo = dest.cargos[0].copy
-                for j in range(3):
-                    load = min(demand[self.time_slot-j, self.airpt, dest.next.airpt],\
-                               ac.capacity - max(cargo.sum(), dest_cargo.sum()),\
-                               factors[j]*total_demand[self.time_slot-j, self.airpt, dest.next.airpt])
-                    cargo[dest.next.airpt] += load
-                    dest_cargo[dest.next.airpt] += load
-                    demand[self.time_slot-j, self.airpt, dest.next.airpt] -= load
-
-                dest.update_profit(dest_cargo)
+                    dest.update_profit(dest_cargo)
 
             revenue = yield_coeff*d*cargo.sum()/1000
 
@@ -178,7 +178,7 @@ class Node:
             cargos = [cargo] + dest.cargos
 
             profit += dest.profit
-        return profit, ((route, times, cargos), demand), status
+        return profit, ((route, times, cargos), demand, dest), status
 
     def update_profit(self, cargo):
         cargo_diff = cargo - self.cargos[0]
@@ -186,7 +186,52 @@ class Node:
         self.cargos[0] = cargo
         self.profit += revenue
 
-    def update(self):
-        pass
+    def update(self, profit, route, times, cargos, demand, dest): #total block time so far (part of system state)
+        self.demand = demand
+        self.route = route
+        self.times = times
+        self.cargos = cargos
+        self.profit = profit
+        self.next: Node = dest
 
 # %%
+
+ac_types = []
+
+profit_res = []
+route_res = []
+times_res = []
+cargos_res = []
+demand_res = total_demand.copy()
+
+stop = False
+while not stop:
+    opt_profit = -np.inf
+    opt_route = []
+    opt_times = []
+    opt_cargos = []
+    opt_demand = []
+
+    for ac_type in range(len(fleet)):
+        if fleet[ac_type] > 0:
+            ac = Aircraft(ac_type)
+
+            network = [[[Node(ap, t, b) for b in range(240)] for t in range(1200)] for ap in range(AP)]
+            
+            #configure end node
+            end: Node = network[hub][-1][0]
+            end.demand = demand_res.copy()
+            end.profit = 0
+
+            for t in range(time_steps):
+                for b in range(240):
+                    for ap in range(AP):
+                        origin: Node = network[ap][t][b]
+
+                        res = [origin.calc_profit(network, ac, dest_airpt) for dest_airpt in range(AP)]
+
+                        profit, ((route, times, cargos), demand, dest), status =\
+                        max(res, key = lambda x: x[0])
+
+                        origin.update(profit, route, times, cargos, demand, dest)
+                        
