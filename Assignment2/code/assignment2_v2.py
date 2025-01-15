@@ -131,15 +131,18 @@ class Node:
             block_time = flight_time + 5
             ready_time = self.time + ceil(block_time + ac.tat/6)
 
+            # If the time of arrival is beyond the scheduling horizon, the flight is infeasible
             if ready_time > time_steps-1:
-                return infeasible, "time is up"          
+                return infeasible, "time is up"
             dest: Node = network[dest_airpt][ready_time]
             #now the Node dest has been defined, only use dest.airpt instead of dest_airpt
 
             #now the Node dest has been defined, only use dest.airpt instead of dest_airpt
             if dest.profit == -np.inf:
                 return infeasible, "dest not discovered."
-            demand = dest.demand.copy()         
+            demand = dest.demand.copy()
+
+            # Determine the cargo that can be loaded at the origin airport including 20% of the 2 previous time slots if capacity allows
             dest_cargo = dest.cargos[0].copy()
             if self.time_slot > 3:
                 #load factors of previous time slots
@@ -153,8 +156,8 @@ class Node:
 
                 # if possible, load cargo destined for the airport after the destination airport
                 if dest.next is not None:
-                    
-                    
+
+
                     for j in range(3):
                         load = min(demand[self.time_slot-j, self.airpt, dest.next.airpt],\
                                 ac.capacity - max(cargo.sum(), dest_cargo.sum()),\
@@ -175,7 +178,7 @@ class Node:
             profit += revenue - cost
             cargos = np.vstack((cargo, dest_cargo, dest.cargos[1:]))
 
-
+        # Update route, times, block_time and profit
         route = [self.airpt] + dest.route
         times = [self.time] + dest.times
         block_time += dest.block_time
@@ -224,7 +227,7 @@ block_res = []
 
 stop = False
 while not stop:
-    # Initialize temporary results
+    # Initialize optimal results
     opt_profit = -np.inf
     opt_route = []
     opt_times = []
@@ -238,7 +241,7 @@ while not stop:
         # Check if there are aircraft of this type left available lease
         if fleet[ac_type] > 0:
             ac = Aircraft(ac_type)
-
+            # Create network of nodes
             network = [[Node(ap, t) for t in range(time_steps)] for ap in range(AP)]
             
             #configure end node
@@ -249,14 +252,17 @@ while not stop:
             for t in range(time_steps-1):
                 for ap in range(AP):
                     origin: Node = network[ap][time_steps-t - 2]
+                    # Calculate results for each destination airport
                     res = [origin.calc_profit(network, ac, dest_airpt) for dest_airpt in range(AP)]
 
+                    # Choose destination with the maximum profit
                     opt = max(res, key = lambda x: x[0])
-                    
+
+                    # if flight is not infeasible, update the origin node with optimal flight
                     if opt[0][0] > -np.inf:
                         (profit, (route, times, cargos, demand, dest, block_time)), status = opt
                         origin.update(profit, route, times, cargos, demand, dest, block_time)
-            
+
             node_profits = [[network[ap][t].profit for t in range(time_steps)] for ap in range(AP)]
 
             fig, ax = plt.subplots(2,1)
@@ -271,6 +277,7 @@ while not stop:
             
             ax[0].plot(start.times, start.route, color = "red")
 
+            # Update optimal results if the profit at the start node is higher than the current optimal profit
             if start.profit > opt_profit:
                 opt_profit = start.profit
                 opt_route = start.route
@@ -285,6 +292,7 @@ while not stop:
             plt.show()
             raise Exception("stoppe maar")
 
+   # End program if profit is nexative, there are no aircraft left or the block time of the optimal route is less than the minimum block time
     if opt_profit < 0 or np.all(fleet == 0) or opt_block < min_block:
         stop = True
     else:
@@ -298,6 +306,6 @@ while not stop:
         route_res.append(opt_route)
         times_res.append(opt_times)
         cargos_res.append(opt_cargos)
-    
+
 print(ac_res, profit_res, route_res, times_res, cargos_res, sep = "\n")
 # %%
