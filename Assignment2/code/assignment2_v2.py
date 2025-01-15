@@ -15,7 +15,7 @@ demand_df = pd.read_excel("Group35.xlsx", skiprows=range(1,5), index_col=(0,1,2)
 #number of airports
 AP = len(airports.columns)
 #number of time slots (4h) -2 leading columns
-time_slots = demand_df.shape[1]-2
+time_slots = demand_df.shape[1]
 #number of timesteps (in steps of 0.1h = 6m
 time_steps = time_slots*40
 
@@ -78,7 +78,7 @@ class Node:
         self.demand = None
         self.route = [airpt]
         self.times = [time]
-        self.cargos = [np.zeros(AP)]
+        self.cargos = np.zeros((1,AP))
         self.profit = -np.inf
         self.is_hub = airpt == hub
         self.next: Node = None
@@ -98,7 +98,10 @@ class Node:
         if self.airpt == dest_airpt:
             #aircraft stays on ground
             dest = network[dest_airpt][self.time+1]
+            if dest.profit == -np.inf:
+                return infeasible, "dest not discovered _"+str(dest)
             demand = dest.demand.copy()
+            cargos = [np.zeros(AP)] + dest.cargos
 
         # if neither origin nor destination is the hub, the flight is infeasible
         elif (not self.is_hub) and (dest_airpt != hub):
@@ -125,16 +128,15 @@ class Node:
             block_time = flight_time + 5
             ready_time = self.time + ceil(block_time + ac.tat/6)
 
-            if ready_time > time_steps:
-                return infeasible, "time is up"
-            
+            if ready_time > time_steps-1:
+                return infeasible, "time is up"          
+            dest: Node = network[dest_airpt][ready_time]
             #now the Node dest has been defined, only use dest.airpt instead of dest_airpt
 
             if dest.profit == -np.inf:
                 return infeasible, "dest not discovered."
-
             demand = dest.demand.copy()         
-
+            dest_cargo = dest.cargos[0].copy()
             if self.time_slot > 3:
                 #load factors of previous time slots
                 factors = [1, 0.2, 0.2]
@@ -145,7 +147,7 @@ class Node:
                     cargo[dest.airpt] += load
                     demand[self.time_slot-j, self.airpt, dest.airpt] -= load
                 if dest.next is not None:
-                    dest_cargo = dest.cargos[0].copy
+                    
                     
                     for j in range(3):
                         load = min(demand[self.time_slot-j, self.airpt, dest.next.airpt],\
@@ -164,15 +166,16 @@ class Node:
             cost = ac.fixed_cost + ac.hour_cost*flight_hours + ac.fuel_cost*fuel_price*d/1.5
 
             profit += revenue - cost
+            cargos = np.vstack((cargo, dest_cargo, dest.cargos[1:]))
 
-            route = [self.airpt] + dest.route
-            times = [self.time] + dest.times
-            cargos = [cargo] + dest_cargo + dest.cargos[1:]
 
-            block_time += dest.block_time
+        route = [self.airpt] + dest.route
+        times = [self.time] + dest.times
+        block_time += dest.block_time
+        profit += dest.profit
 
-            profit += dest.profit
-        return profit, ((route, times, cargos), demand, dest, block_time), status
+
+        return (profit, (route, times, cargos, demand, dest, block_time)), status
 
     def update_profit(self, cargo):
         cargo_diff = cargo - self.cargos[0]
@@ -188,6 +191,16 @@ class Node:
         self.profit = profit
         self.next: Node = dest
         self.block_time = block_time
+
+    def __str__(self):
+        s = f"Node: (airpt: {self.airpt}, time: {self.time})\n"
+        dest = self.next
+        if dest is not None:
+            ds = str(dest.airpt)
+        else:
+            ds = "None"
+        s+= f"profit: {self.profit}\nnext: {ds}"
+        return s
 
 # %%
 
@@ -209,11 +222,12 @@ while not stop:
     opt_demand = []
     opt_block = 0
 
+    fig, ax = plt.subplots(3,1)
     for ac_type in range(len(fleet)):
         if fleet[ac_type] > 0:
             ac = Aircraft(ac_type)
 
-            network = [[[Node(ap, t, b) for b in range(240)] for t in range(1200)] for ap in range(AP)]
+            network = [[Node(ap, t) for t in range(time_steps)] for ap in range(AP)]
             
             #configure end node
             end: Node = network[hub][-1]
@@ -222,14 +236,18 @@ while not stop:
             print("network initialized")
             for t in range(time_steps):
                 for ap in range(AP):
-                    origin: Node = network[ap][t]
-
+                    origin: Node = network[ap][time_steps-t - 2]
                     res = [origin.calc_profit(network, ac, dest_airpt) for dest_airpt in range(AP)]
 
-                    profit, ((route, times, cargos), demand, dest, block_time), status =\
-                    max(res, key = lambda x: x[0])
-
-                    origin.update(profit, route, times, cargos, demand, dest, block_time)
+                    opt = max(res, key = lambda x: x[0])
+                    
+                    if opt[0][0] > -np.inf:
+                        (profit, (route, times, cargos, demand, dest, block_time)), status = opt
+                        origin.update(profit, route, times, cargos, demand, dest, block_time)
+            
+            node_profits = [[network[ap][t].profit for t in range(time_steps)] for ap in range(AP)]
+            ax[ac_type].imshow(node_profits)
+            
 
 
             #start node is at 24h mark (0*24). By definition
@@ -245,6 +263,8 @@ while not stop:
                 opt_demand = start.demand.copy()
                 opt_ac_type = ac_type
                 opt_block = start.block_time
+            plt.title(f"Comparison of aircraft types in first round. Best is {opt_ac_type}")
+            plt.show()
 
     if opt_profit < 0 or np.all(fleet == 0) or opt_block < min_block:
         stop = True
@@ -260,5 +280,5 @@ while not stop:
         times_res.append(opt_times)
         cargos_res.append(opt_cargos)
     
-
+print(ac_res, profit_res, route_res, times_res, cargos_res, sep = "\n")
 # %%
