@@ -149,8 +149,9 @@ class Node:
                 factors = [1, 0.2, 0.2]
                 for j in range(3):
                     load = min(demand[self.time_slot-j, self.airpt, dest.airpt],\
-                            ac.capacity - cargo.sum(),\
-                                factors[j]*total_demand[self.time_slot-j, self.airpt, dest.airpt])
+                               ac.capacity - cargo.sum(),\
+                               factors[j]*total_demand[self.time_slot-j, self.airpt, dest.airpt])
+                    
                     cargo[dest.airpt] += load # store in cargo array
                     demand[self.time_slot-j, self.airpt, dest.airpt] -= load # update demand by substracting the loaded cargo
 
@@ -159,8 +160,11 @@ class Node:
 
                     for j in range(3):
                         load = min(demand[self.time_slot-j, self.airpt, dest.next.airpt],\
-                                ac.capacity - max(cargo.sum(), dest_cargo.sum()),\
-                                factors[j]*total_demand[self.time_slot-j, self.airpt, dest.next.airpt])
+                                   ac.capacity - cargo.sum(),\
+                                   ac.capacity - dest_cargo.sum(),\
+                                   factors[j]*total_demand[self.time_slot-j, self.airpt, dest.next.airpt])
+                        
+                        cargo[dest.next.airpt] += load
                         dest_cargo[dest.next.airpt] += load # store separately for destination node
                         cargo2[dest.next.airpt] += load
                         demand[self.time_slot-j, self.airpt, dest.next.airpt] -= load # update demand by substracting the loaded cargo
@@ -176,7 +180,12 @@ class Node:
             profit += revenue - cost
 
             #add cargo used in next leg to current leg.
-            cargo += cargo2
+
+            if cargo.sum() > ac.capacity*1.1:
+                print(self, dest, cargo.round(), cargo2.round())
+                raise Exception("cargo limit")
+
+            #add current node's used cargo to route.
             cargos = np.vstack((cargo, dest_cargo, dest.cargos[1:]))
 
         # Update route, times, block_time and profit
@@ -275,10 +284,11 @@ while not stop:
             #of the Node class. It should give the best valid route
             #(valid block time)
             start: Node = network[hub][0]
-            
+
+
             ax[0].plot(start.times, start.route, color = "red")
             ax[1].imshow(np.log(demand_df.to_numpy()), aspect = "auto", interpolation = "none")
-            ax[2].imshow(start.cargos, aspect = "auto", interpolation = "none")
+            ax[2].imshow(start.cargos.T, aspect = "auto", interpolation = "none")
 
             # Update optimal results if the profit at the start node is higher than the current optimal profit
             if start.profit > opt_profit:
