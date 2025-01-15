@@ -99,6 +99,8 @@ class Node:
         # if destination airport is the same as the current airport, destination is the node of the same airport at the next timestep, block time and demand are unchanged
         if self.airpt == dest_airpt:
             #aircraft stays on ground
+            if self.time ==  1199:
+                print(self.time, self.airpt, dest_airpt, ac.ac_type)
             dest = network[dest_airpt][self.time+1]
             if dest.profit == -np.inf:
                 return infeasible, "dest not discovered _"+str(dest)
@@ -229,8 +231,9 @@ while not stop:
     opt_cargos = []
     opt_demand = []
     opt_block = 0
+    opt_ac_type = None
 
-    fig, ax = plt.subplots(3,1)
+    #fig, ax = plt.subplots(3,1)
     for ac_type in range(len(fleet)):
         # Check if there are aircraft of this type left available lease
         if fleet[ac_type] > 0:
@@ -243,7 +246,7 @@ while not stop:
             end.demand = demand_res.copy()
             end.profit = 0
             print("network initialized")
-            for t in range(time_steps):
+            for t in range(time_steps-1):
                 for ap in range(AP):
                     origin: Node = network[ap][time_steps-t - 2]
                     res = [origin.calc_profit(network, ac, dest_airpt) for dest_airpt in range(AP)]
@@ -255,14 +258,18 @@ while not stop:
                         origin.update(profit, route, times, cargos, demand, dest, block_time)
             
             node_profits = [[network[ap][t].profit for t in range(time_steps)] for ap in range(AP)]
-            ax[ac_type].imshow(node_profits)
-            
 
+            fig, ax = plt.subplots(2,1)
+            ax[0].imshow(node_profits, aspect = "auto", interpolation = "nearest")
+            
+            
 
             #start node is at 24h mark (0*24). By definition
             #of the Node class. It should give the best valid route
             #(valid block time)
             start: Node = network[hub][0]
+            
+            ax[0].plot(start.times, start.route, color = "red")
 
             if start.profit > opt_profit:
                 opt_profit = start.profit
@@ -272,8 +279,11 @@ while not stop:
                 opt_demand = start.demand.copy()
                 opt_ac_type = ac_type
                 opt_block = start.block_time
-            plt.title(f"Comparison of aircraft types in first round. Best is {opt_ac_type}")
+            plt.title(f"Aircraft route and max profit per node")
+
+            
             plt.show()
+            raise Exception("stoppe maar")
 
     if opt_profit < 0 or np.all(fleet == 0) or opt_block < min_block:
         stop = True
