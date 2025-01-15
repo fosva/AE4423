@@ -93,7 +93,7 @@ class Node:
         
         profit = 0
         cargo = np.zeros(AP)  # will be updated with the cargo loaded to this flight sorted for destination airport
-        cargo2 = np.zeros(AP)
+        cargo2 = np.zeros(AP) # will be updated with the cargo loaded to next flight.
         block_time = 0
 
         # if destination airport is the same as the current airport, destination is the node of the same airport at the next timestep, block time and demand are unchanged
@@ -157,14 +157,12 @@ class Node:
                 # if possible, load cargo destined for the airport after the destination airport
                 if dest.next is not None:
 
-
                     for j in range(3):
                         load = min(demand[self.time_slot-j, self.airpt, dest.next.airpt],\
                                 ac.capacity - max(cargo.sum(), dest_cargo.sum()),\
                                 factors[j]*total_demand[self.time_slot-j, self.airpt, dest.next.airpt])
-                        cargo[dest.next.airpt] += load # store in cargo array
                         dest_cargo[dest.next.airpt] += load # store separately for destination node
-                        cargo2 += load
+                        cargo2[dest.next.airpt] += load
                         demand[self.time_slot-j, self.airpt, dest.next.airpt] -= load # update demand by substracting the loaded cargo
 
 
@@ -176,6 +174,9 @@ class Node:
             cost = ac.fixed_cost + ac.hour_cost*flight_hours + ac.fuel_cost*fuel_price*d/1.5
 
             profit += revenue - cost
+
+            #add cargo used in next leg to current leg.
+            cargo += cargo2
             cargos = np.vstack((cargo, dest_cargo, dest.cargos[1:]))
 
         # Update route, times, block_time and profit
@@ -265,8 +266,8 @@ while not stop:
 
             node_profits = [[network[ap][t].profit for t in range(time_steps)] for ap in range(AP)]
 
-            fig, ax = plt.subplots(2,1)
-            ax[0].imshow(node_profits, aspect = "auto", interpolation = "nearest")
+            fig, ax = plt.subplots(3,1)
+            ax[0].imshow(node_profits, aspect = "auto", interpolation = "none")
             
             
 
@@ -276,6 +277,8 @@ while not stop:
             start: Node = network[hub][0]
             
             ax[0].plot(start.times, start.route, color = "red")
+            ax[1].imshow(np.log(demand_df.to_numpy()), aspect = "auto", interpolation = "none")
+            ax[2].imshow(start.cargos, aspect = "auto", interpolation = "none")
 
             # Update optimal results if the profit at the start node is higher than the current optimal profit
             if start.profit > opt_profit:
