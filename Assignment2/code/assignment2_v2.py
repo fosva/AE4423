@@ -103,6 +103,9 @@ class Node:
         elif (not self.is_hub) and (dest_airpt != hub):
             return infeasible, "flight does not visit hub"
 
+
+        # if flight is feasible
+        
         # if flight is feasible
         else:
             #we gaan vliegen
@@ -114,7 +117,7 @@ class Node:
             if d > ac.range:
                 return infeasible, "infeasible range"
             
-            # compute travel time to update block time and
+
             #flight time in hours
             flight_hours = d/ac.speed
             #flight time in 0.1h (6m)
@@ -200,7 +203,7 @@ class Node:
 
 # %%
 
-ac_types = []
+ac_res = []
 
 profit_res = []
 route_res = []
@@ -238,4 +241,36 @@ while not stop:
                         max(res, key = lambda x: x[0])
 
                         origin.update(profit, route, times, cargos, demand, dest)
-                        
+
+
+
+
+            #start node is at 24h mark (0*24). By definition
+            #of the Node class. It should give the best valid route
+            #(valid block time)
+            start: Node = network[hub][0][0]
+
+            if start.profit > opt_profit:
+                opt_profit = start.profit
+                opt_route = start.route
+                opt_times = start.times
+                opt_cargos = start.cargos
+                opt_demand = start.demand.copy()
+                
+
+                opt_ac_type = ac_type
+
+    if opt_profit < 0 or np.all(fleet == 0):
+        stop = True
+    else:
+        #update results
+        fleet[opt_ac_type] -=1
+        
+        demand_res = opt_demand
+
+        ac_res.append(opt_ac_type)
+        profit_res.append(opt_profit)
+        route_res.append(opt_route)
+        times_res.append(opt_times)
+        cargos_res.append(opt_cargos)
+    
