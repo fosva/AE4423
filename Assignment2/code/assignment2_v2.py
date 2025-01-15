@@ -12,17 +12,17 @@ airports = pd.read_excel("AirportData.xlsx", index_col=0)
 aircraft_types = pd.read_excel("FleetType.xlsx", index_col=0)
 demand_df = pd.read_excel("Group35.xlsx", skiprows=range(1,5), index_col=(0,1,2))
 
-#number of airports
+# number of airports
 AP = len(airports.columns)
 #number of time slots (4h) -2 leading columns
 time_slots = demand_df.shape[1]
 #number of timesteps (in steps of 0.1h = 6m
 time_steps = time_slots*40
 
-#calculate great arc length distance between airports
+# calculate great arc length distance between airports and store them in an array
 def d(pos0: list, pos1: list):
     R = 6371
-    #from the assignment:
+    # from the assignment:
     return 2*R*sqrt(sin((pos0[0]-pos1[0])/2)**2 + cos(pos0[0])*cos(pos1[0])*sin((pos0[1]-pos1[1])/2)**2)
 radian = pi/180
 dist = np.zeros((AP,AP))
@@ -33,25 +33,26 @@ for i in range(AP):
         loc1 = poss.iloc[:,j]
         dist[i,j] = d(loc0.to_numpy()*radian, loc1.to_numpy()*radian)
 
-#save runway lengths in numpy array.
+# save runway lengths in numpy array.
 runways = airports.loc[["Runway (m)"]].to_numpy().flatten()
 
-#aircraft types
+# aircraft types
 types = aircraft_types.to_numpy()
 fleet = aircraft_types.loc[["Fleet"]].to_numpy(dtype=int).flatten()
 
 # Restructure the demand data into a 3D array
-#demand_kij is the demand from airport i to airport j in timeslot k.
+# demand_kij is the demand from airport i to airport j in timeslot k.
 demand = demand_df.to_numpy().T.reshape(-1, 20, 20)
 total_demand = demand.copy()
 
-#parameters
+# parameters
 fuel_price = 1.42
 yield_coeff = 0.26
 hub = 3
 min_block = 60 #in 0.1h (6m)
 
 #%%
+# Aircraft class, stores aircraft parameters for every type
 class Aircraft:
     def __init__(self, ac_type):
         self.speed, self.capacity, self.tat, self.range,\
@@ -71,30 +72,31 @@ class Node:
     The destination's parameters are copied and modified, then added to the current node.
     """
     def __init__(self, airpt, time):
-        self.airpt = airpt
+        self.airpt = airpt # airport that the node
         self.time = time  #timestep of the node
         self.block_time = 0 #total block time so far
         self.time_slot = time//40
-        self.demand = None
-        self.route = [airpt]
-        self.times = [time]
-        self.cargos = np.zeros((1,AP))
-        self.profit = -np.inf
-        self.is_hub = airpt == hub
-        self.next: Node = None
+        self.demand = None # demand at this airport and timestep, updated at every node update
+        self.route = [airpt] # list of airports of optimal route from this airport for the remaining timesteps
+        self.times = [time] # list of timesteps of optimal route from this airport for the remaining timesteps
+        self.cargos = np.zeros((1,AP)) # the cargos loaded to the aircraft when arriving at this airport
+        self.profit = -np.inf  # profit of optimal route from this airport for the remaining timesteps, initialized at -inf
+        self.is_hub = airpt == hub # whether the airport is the hub or not
+        self.next: Node = None # next node in the optimal route (i.e. node associated with destination airport at the timstep of arrival)
 
-    #@debug
+    # Function to calculate profit of a flight from this node to a specified destination with a specified aircraft type
     def calc_profit(self, network, ac: Aircraft, dest_airpt):
+        # Initializations
         infeasible = (-np.inf, (None,))
         status = "ok"
         dest: Node
         
         profit = 0
-        cargo = np.zeros(AP)
+        cargo = np.zeros(AP)  # will be updated with the cargo loaded to this flight sorted for destination airport
         cargo2 = np.zeros(AP)
         block_time = 0
 
-        # if aircraft stays at the same airport, destination is at next timestep and demand is copied
+        # if destination airport is the same as the current airport, destination is the node of the same airport at the next timestep, block time and demand are unchanged
         if self.airpt == dest_airpt:
             #aircraft stays on ground
             dest = network[dest_airpt][self.time+1]
@@ -107,7 +109,6 @@ class Node:
         elif (not self.is_hub) and (dest_airpt != hub):
             return infeasible, "flight does not visit hub"
 
-        # if flight is feasible
         else:
             #we gaan vliegen
             # check runway and range constraints, return infeasible if not satisfied
@@ -118,13 +119,13 @@ class Node:
             if d > ac.range:
                 return infeasible, "infeasible range"
             
-
+            # compute travel time to update block time and the time of arrival at the destination
             #flight time in hours
             flight_hours = d/ac.speed
-            #flight time in 0.1h (6m)
+            # flight time in 0.1h (6m), or timesteps
             flight_time = 10*flight_hours
 
-            #add 30m to calc block time
+            # add 30m to calc block time
             block_time = flight_time + 5
             ready_time = self.time + ceil(block_time + ac.tat/6)
 
@@ -133,6 +134,7 @@ class Node:
             dest: Node = network[dest_airpt][ready_time]
             #now the Node dest has been defined, only use dest.airpt instead of dest_airpt
 
+            #now the Node dest has been defined, only use dest.airpt instead of dest_airpt
             if dest.profit == -np.inf:
                 return infeasible, "dest not discovered."
             demand = dest.demand.copy()         
@@ -144,8 +146,10 @@ class Node:
                     load = min(demand[self.time_slot-j, self.airpt, dest.airpt],\
                             ac.capacity - cargo.sum(),\
                                 factors[j]*total_demand[self.time_slot-j, self.airpt, dest.airpt])
-                    cargo[dest.airpt] += load
-                    demand[self.time_slot-j, self.airpt, dest.airpt] -= load
+                    cargo[dest.airpt] += load # store in cargo array
+                    demand[self.time_slot-j, self.airpt, dest.airpt] -= load # update demand by substracting the loaded cargo
+
+                # if possible, load cargo destined for the airport after the destination airport
                 if dest.next is not None:
                     
                     
@@ -153,16 +157,17 @@ class Node:
                         load = min(demand[self.time_slot-j, self.airpt, dest.next.airpt],\
                                 ac.capacity - max(cargo.sum(), dest_cargo.sum()),\
                                 factors[j]*total_demand[self.time_slot-j, self.airpt, dest.next.airpt])
-                        cargo[dest.next.airpt] += load
-                        dest_cargo[dest.next.airpt] += load
+                        cargo[dest.next.airpt] += load # store in cargo array
+                        dest_cargo[dest.next.airpt] += load # store separately for destination node
                         cargo2 += load
-                        demand[self.time_slot-j, self.airpt, dest.next.airpt] -= load
+                        demand[self.time_slot-j, self.airpt, dest.next.airpt] -= load # update demand by substracting the loaded cargo
 
-                    
 
-            #revenue measured in tons
+
+            # Calculate revenue based on cargo loaded
             revenue = yield_coeff*d*(cargo + cargo2).sum()/1000
 
+            # Calculate cost based on aircraft type and flight distance
             cost = ac.fixed_cost + ac.hour_cost*flight_hours + ac.fuel_cost*fuel_price*d/1.5
 
             profit += revenue - cost
@@ -183,6 +188,7 @@ class Node:
         self.cargos[0] = cargo
         self.profit += revenue_diff
 
+    # Define update function to load new values into the node
     def update(self, profit, route, times, cargos, demand, dest, block_time): #total block time so far (part of system state)
         self.demand = demand
         self.route = route
@@ -203,7 +209,8 @@ class Node:
         return s
 
 # %%
-
+# Main loop
+# Initialize results
 ac_res = []
 
 profit_res = []
@@ -215,6 +222,7 @@ block_res = []
 
 stop = False
 while not stop:
+    # Initialize temporary results
     opt_profit = -np.inf
     opt_route = []
     opt_times = []
@@ -224,6 +232,7 @@ while not stop:
 
     fig, ax = plt.subplots(3,1)
     for ac_type in range(len(fleet)):
+        # Check if there are aircraft of this type left available lease
         if fleet[ac_type] > 0:
             ac = Aircraft(ac_type)
 
@@ -271,7 +280,7 @@ while not stop:
     else:
         #update results
         fleet[opt_ac_type] -=1
-        
+
         demand_res = opt_demand
 
         ac_res.append(opt_ac_type)
