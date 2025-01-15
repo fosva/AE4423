@@ -70,10 +70,10 @@ class Node:
     profit, which is then used to find the best destination.
     The destination's parameters are copied and modified, then added to the current node.
     """
-    def __init__(self, airpt, time, block):
+    def __init__(self, airpt, time):
         self.airpt = airpt
         self.time = time  #timestep of the node
-        self.block = block #total block time so far (part of system state)
+        self.block_time = 0 #total block time so far
         self.time_slot = time//40
         self.demand = None
         self.route = [airpt]
@@ -88,24 +88,22 @@ class Node:
         infeasible = (-np.inf, (None,))
         status = "ok"
         dest: Node
-
         
         profit = 0
         cargo = np.zeros(AP)
+        cargo2 = np.zeros(AP)
+        block_time = 0
 
         # if aircraft stays at the same airport, destination is at next timestep and demand is copied
         if self.airpt == dest_airpt:
             #aircraft stays on ground
-            dest = network[dest_airpt][self.block][self.time+1]
+            dest = network[dest_airpt][self.time+1]
             demand = dest.demand.copy()
 
         # if neither origin nor destination is the hub, the flight is infeasible
         elif (not self.is_hub) and (dest_airpt != hub):
             return infeasible, "flight does not visit hub"
 
-
-        # if flight is feasible
-        
         # if flight is feasible
         else:
             #we gaan vliegen
@@ -130,22 +128,6 @@ class Node:
             if ready_time > time_steps:
                 return infeasible, "time is up"
             
-            
-            #at the end of 24h, check if the block time limit is satisfied
-            #If current time and ready time are not in the same 24h block:
-            if self.time//240 != ready_time//240:
-                #self.block should be reset to 0. All other cases are infeasible.
-                if self.block != 0:
-                    return infeasible, "reset block time"
-                #choose the node that satisfies dest_airpt and ready time and maximizes profit.
-                dest = max([network[dest_airpt][b][ready_time] for b in range(min_block, 240)], key = lambda x: x.profit)
-            else:
-                #subtract block time, since we are going in reverse
-                block_dest = self.block - int(block_time)
-                if block_dest < 0:
-                    return infeasible, "block time infeasible"
-                dest = network[dest_airpt][block_dest][ready_time]
-
             #now the Node dest has been defined, only use dest.airpt instead of dest_airpt
 
             if dest.profit == -np.inf:
@@ -164,17 +146,20 @@ class Node:
                     demand[self.time_slot-j, self.airpt, dest.airpt] -= load
                 if dest.next is not None:
                     dest_cargo = dest.cargos[0].copy
+                    
                     for j in range(3):
                         load = min(demand[self.time_slot-j, self.airpt, dest.next.airpt],\
                                 ac.capacity - max(cargo.sum(), dest_cargo.sum()),\
                                 factors[j]*total_demand[self.time_slot-j, self.airpt, dest.next.airpt])
                         cargo[dest.next.airpt] += load
                         dest_cargo[dest.next.airpt] += load
+                        cargo2 += load
                         demand[self.time_slot-j, self.airpt, dest.next.airpt] -= load
 
-                    dest.update_profit(dest_cargo)
+                    
 
-            revenue = yield_coeff*d*cargo.sum()/1000
+            #revenue measured in tons
+            revenue = yield_coeff*d*(cargo + cargo2).sum()/1000
 
             cost = ac.fixed_cost + ac.hour_cost*flight_hours + ac.fuel_cost*fuel_price*d/1.5
 
@@ -184,22 +169,25 @@ class Node:
             times = [self.time] + dest.times
             cargos = [cargo] + dest.cargos
 
+            block_time += dest.block_time
+
             profit += dest.profit
-        return profit, ((route, times, cargos), demand, dest), status
+        return profit, ((route, times, cargos), demand, dest, block_time), status
 
     def update_profit(self, cargo):
         cargo_diff = cargo - self.cargos[0]
-        revenue = yield_coeff*d*cargo_diff.sum()
+        revenue_diff = yield_coeff*d*cargo_diff.sum()/1000
         self.cargos[0] = cargo
-        self.profit += revenue
+        self.profit += revenue_diff
 
-    def update(self, profit, route, times, cargos, demand, dest): #total block time so far (part of system state)
+    def update(self, profit, route, times, cargos, demand, dest, block_time): #total block time so far (part of system state)
         self.demand = demand
         self.route = route
         self.times = times
         self.cargos = cargos
         self.profit = profit
         self.next: Node = dest
+        self.block_time = block_time
 
 # %%
 
@@ -226,29 +214,26 @@ while not stop:
             network = [[[Node(ap, t, b) for b in range(240)] for t in range(1200)] for ap in range(AP)]
             
             #configure end node
-            end: Node = network[hub][-1][0]
+            end: Node = network[hub][-1]
             end.demand = demand_res.copy()
             end.profit = 0
-
+            print("network initialized")
             for t in range(time_steps):
-                for b in range(240):
-                    for ap in range(AP):
-                        origin: Node = network[ap][t][b]
+                for ap in range(AP):
+                    origin: Node = network[ap][t]
 
-                        res = [origin.calc_profit(network, ac, dest_airpt) for dest_airpt in range(AP)]
+                    res = [origin.calc_profit(network, ac, dest_airpt) for dest_airpt in range(AP)]
 
-                        profit, ((route, times, cargos), demand, dest), status =\
-                        max(res, key = lambda x: x[0])
+                    profit, ((route, times, cargos), demand, dest, block_time), status =\
+                    max(res, key = lambda x: x[0])
 
-                        origin.update(profit, route, times, cargos, demand, dest)
-
-
+                    origin.update(profit, route, times, cargos, demand, dest, block_time)
 
 
             #start node is at 24h mark (0*24). By definition
             #of the Node class. It should give the best valid route
             #(valid block time)
-            start: Node = network[hub][0][0]
+            start: Node = network[hub][0]
 
             if start.profit > opt_profit:
                 opt_profit = start.profit
@@ -261,6 +246,7 @@ while not stop:
                 opt_ac_type = ac_type
 
     if opt_profit < 0 or np.all(fleet == 0):
+        #TODO and min_block
         stop = True
     else:
         #update results
@@ -274,3 +260,5 @@ while not stop:
         times_res.append(opt_times)
         cargos_res.append(opt_cargos)
     
+
+# %%
