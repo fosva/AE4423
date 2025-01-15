@@ -83,7 +83,7 @@ class Node:
         self.is_hub = airpt == hub
         self.next: Node = None
 
-
+    #@debug
     def calc_profit(self, network, ac: Aircraft, dest_airpt):
         infeasible = (-np.inf, (None,))
         status = "ok"
@@ -167,7 +167,7 @@ class Node:
 
             route = [self.airpt] + dest.route
             times = [self.time] + dest.times
-            cargos = [cargo] + dest.cargos
+            cargos = [cargo] + dest_cargo + dest.cargos[1:]
 
             block_time += dest.block_time
 
@@ -198,6 +198,7 @@ route_res = []
 times_res = []
 cargos_res = []
 demand_res = total_demand.copy()
+block_res = []
 
 stop = False
 while not stop:
@@ -206,6 +207,7 @@ while not stop:
     opt_times = []
     opt_cargos = []
     opt_demand = []
+    opt_block = 0
 
     for ac_type in range(len(fleet)):
         if fleet[ac_type] > 0:
@@ -241,12 +243,10 @@ while not stop:
                 opt_times = start.times
                 opt_cargos = start.cargos
                 opt_demand = start.demand.copy()
-                
-
                 opt_ac_type = ac_type
+                opt_block = start.block_time
 
-    if opt_profit < 0 or np.all(fleet == 0):
-        #TODO and min_block
+    if opt_profit < 0 or np.all(fleet == 0) or opt_block < min_block:
         stop = True
     else:
         #update results
