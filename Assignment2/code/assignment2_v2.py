@@ -250,6 +250,7 @@ while not stop:
             end.demand = demand_res.copy()
             end.profit = 0
             print("network initialized")
+            # Loop through from last timestep backwards
             for t in range(time_steps-1):
                 for ap in range(AP):
                     origin: Node = network[ap][time_steps-t - 2]
@@ -259,13 +260,14 @@ while not stop:
                     # Choose destination with the maximum profit
                     opt = max(res, key = lambda x: x[0])
 
-                    # if flight is not infeasible, update the origin node with optimal flight
+                    # if flight is feasible, update the origin node with optimal flight
                     if opt[0][0] > -np.inf:
                         (profit, (route, times, cargos, demand, dest, block_time)), status = opt
                         origin.update(profit, route, times, cargos, demand, dest, block_time)
 
             node_profits = [[network[ap][t].profit for t in range(time_steps)] for ap in range(AP)]
 
+            # plot heatmap of optimal profit at each node
             fig, ax = plt.subplots(3,1)
             ax[0].imshow(node_profits, aspect = "auto", interpolation = "none")
             
@@ -275,7 +277,8 @@ while not stop:
             #of the Node class. It should give the best valid route
             #(valid block time)
             start: Node = network[hub][0]
-            
+
+            # plot optimal route on profit heatmap, demand heatmap over time and cargo heatmap per flight
             ax[0].plot(start.times, start.route, color = "red")
             ax[1].imshow(np.log(demand_df.to_numpy()), aspect = "auto", interpolation = "none")
             ax[2].imshow(start.cargos, aspect = "auto", interpolation = "none")
@@ -295,7 +298,7 @@ while not stop:
             plt.show()
             raise Exception("stoppe maar")
 
-   # End program if profit is nexative, there are no aircraft left or the block time of the optimal route is less than the minimum block time
+   # End program if profit is negative, there are no aircraft left or the block time of the optimal route is less than the minimum block time
     if opt_profit < 0 or np.all(fleet == 0) or opt_block < min_block:
         stop = True
     else:
