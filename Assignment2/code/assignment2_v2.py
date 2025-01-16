@@ -301,10 +301,14 @@ while not stop:
             # plot optimal route on profit heatmap, demand heatmap over time and cargo heatmap per flight
             ax[0].plot(start.times, start.route, color = "red")
 
-            ax[1].imshow(np.log(demand_df.to_numpy()), aspect = "auto", interpolation = "none")
+            ax[1].imshow(np.log(demand_df.to_numpy()), aspect = "auto", interpolation = "none", extent = [0, time_slots, 0, AP])
+            for slot in range(time_slots):
+                ax[1].plot([slot, slot],[0,AP], color = "black", linestyle = "dotted")
+                ax[2].plot([slot*40, slot*40], [0, AP], color = "white", linestyle = "dotted")
 
             ax[2].imshow(cargos_disp.T, aspect = "auto", interpolation = "none")
             ax[2].plot(start.times, start.route, color = "red")
+
 
             # Update optimal results if the profit at the start node is higher than the current optimal profit
             if start.profit > opt_profit:
