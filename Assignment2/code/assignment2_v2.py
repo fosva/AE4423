@@ -42,7 +42,7 @@ fleet = aircraft_types.loc[["Fleet"]].to_numpy(dtype=int).flatten()
 
 # Restructure the demand data into a 3D array
 # demand_kij is the demand from airport i to airport j in timeslot k.
-demand = demand_df.to_numpy().T.reshape(-1, 20, 20)
+demand = demand_df.to_numpy().T.reshape(-1, AP, AP)
 total_demand = demand.copy()
 
 # parameters
@@ -229,17 +229,19 @@ class Node:
 # Initialize results
 ac_res = []
 
-profit_res = []
+profits_res = []
 route_res = []
 times_res = []
 cargos_res = []
-demand_res = total_demand.copy()
+demand_res = [total_demand.copy()]
 block_res = []
-
+#
+fleet = [1, 0, 1]
+#
 stop = False
 while not stop:
     # Initialize optimal results
-    opt_profit = -np.inf
+    opt_profits = np.zeros((AP, time_steps))-np.inf
     opt_route = []
     opt_times = []
     opt_cargos = []
@@ -250,7 +252,6 @@ while not stop:
     #fig, ax = plt.subplots(3,1)
     for ac_type in range(len(fleet)):
         # Check if there are aircraft of this type left available lease
-        ac_type = 1
         if fleet[ac_type] > 0:
             ac = Aircraft(ac_type)
             # Create network of nodes
@@ -258,62 +259,40 @@ while not stop:
             
             #configure end node
             end: Node = network[hub][-1]
-            end.demand = demand_res.copy()
+            end.demand = demand_res[-1].copy()
             end.profit = 0
             print("network initialized")
+
             # Loop through from last timestep backwards
             for t in range(time_steps-1):
                 for ap in range(AP):
-                    origin: Node = network[ap][time_steps-t - 2]
+                    # get leg's first node, from network
+                    origin: Node = network[ap][time_steps - t - 2]
                     # Calculate results for each destination airport
                     res = [origin.calc_profit(network, ac, dest_airpt) for dest_airpt in range(AP)]
 
                     # Choose destination with the maximum profit
                     opt = max(res, key = lambda x: x[0][0])
 
-                    # if flight is feasible, update the origin node with optimal flight
+                    # if best flight is feasible, update the origin node with optimal flight
                     if opt[0][0] > -np.inf:
                         (profit, (route, times, cargos, demand, dest, block_time)), status = opt
+                        assert status == "ok"
+
                         origin.update(profit, route, times, cargos, demand, dest, block_time)
 
                         
             node_profits = [[network[ap][t].profit for t in range(time_steps)] for ap in range(AP)]
 
-            # plot heatmap of optimal profit at each node
-            fig, ax = plt.subplots(3,1)
-            ax[0].imshow(node_profits, aspect = "auto", interpolation = "none")
-            
-            
 
             #start node is at 24h mark (0*24). By definition
             #of the Node class. It should give the best valid route
             #(valid block time)
             start: Node = network[hub][0]
 
-            t = np.array(start.times)
-            durations = t[1:] - t[:-1]
-
-            cargos_disp = np.zeros((time_steps, AP))
-            for i in range(len(t)-1):
-                cargos_disp[t[i]:t[i]+durations[i]] = start.cargos[i]
-
-            cargos_disp[cargos_disp==0] = np.nan
-
-            # plot optimal route on profit heatmap, demand heatmap over time and cargo heatmap per flight
-            ax[0].plot(start.times, start.route, color = "red")
-
-            ax[1].imshow(np.log(demand_df.to_numpy()), aspect = "auto", interpolation = "none", extent = [0, time_slots, 0, AP])
-            for slot in range(time_slots):
-                ax[1].plot([slot, slot],[0,AP], color = "black", linestyle = "dotted")
-                ax[2].plot([slot*40, slot*40], [0, AP], color = "black", linestyle = "dotted")
-
-            ax[2].imshow(cargos_disp.T, aspect = "auto", interpolation = "none")
-            ax[2].plot(start.times, start.route, color = "red")
-
-
             # Update optimal results if the profit at the start node is higher than the current optimal profit
-            if start.profit > opt_profit:
-                opt_profit = start.profit
+            if start.profit > opt_profits[hub][0]:
+                opt_profits = [[node.profit for node in airpt] for airpt in network]
                 opt_route = start.route
                 opt_times = start.times
                 opt_cargos = start.cargos
@@ -321,24 +300,59 @@ while not stop:
                 opt_ac_type = ac_type
                 opt_block = start.block_time
 
-            
-            plt.show()
-            raise Exception("stoppe maar")
 
    # End program if profit is negative, there are no aircraft left or the block time of the optimal route is less than the minimum block time
-    if opt_profit < 0 or np.all(fleet == 0) or opt_block < min_block:
+    if opt_profits[hub][0] < 0 or np.all(fleet == 0) or opt_block < min_block:
         stop = True
     else:
         #update results
         fleet[opt_ac_type] -=1
 
-        demand_res = opt_demand
-
         ac_res.append(opt_ac_type)
-        profit_res.append(opt_profit)
+        profits_res.append(opt_profits)
         route_res.append(opt_route)
         times_res.append(opt_times)
         cargos_res.append(opt_cargos)
+        demand_res.append(opt_demand)
+    print(f"aircraft used so far: {ac_res}\
+          \naircraft left in fleet: {fleet}")
+#%%
 
-print(ac_res, profit_res, route_res, times_res, cargos_res, sep = "\n")
+profits_res = np.array(profits_res)
+
+# plot heatmap of optimal profit at each node
+n_ans = len(ac_res)
+print("Number of answers found: ", n_ans)
+
+fig, ax = plt.subplots(3, n_ans)
+
+for i in range(n_ans):
+    t = np.array(times_res[i])
+    durations = t[1:] - t[:-1]
+
+    cargos_disp = np.zeros((time_steps, AP))
+    for j in range(len(t)-1):
+        cargos_disp[t[j]:t[j]+durations[j]] = cargos_res[i][j]
+
+    cargos_disp[cargos_disp==0] = np.nan
+
+    # plot optimal route on profit heatmap, demand heatmap over time and cargo heatmap per flight
+
+    demand = demand_res[i]
+    demand_tot = demand.sum(axis=2) + demand.sum(axis=1)
+
+    ax[1, i].imshow(np.log(demand_tot).T, aspect = "auto", interpolation = "none", extent = [0, time_slots, AP,0])
+    for slot in range(time_slots):
+        ax[1,i].plot([slot, slot],[0,AP], color = "black", linestyle = "dotted")
+        ax[0,i].plot([slot*40, slot*40], [0, AP], color = "black", linestyle = "dotted")
+
+    ax[0,i].imshow(cargos_disp.T, aspect = "auto", interpolation = "none")
+    ax[0,i].plot(times_res[i], route_res[i], color = "red")
+    ax[0,i].set_title(f"Route for solution {i}\naircraft type {ac_res[i]+1}")
+
+    ax[2,i].imshow(profits_res[i], aspect = "auto", interpolation = "none")
+    ax[2,i].plot(times_res[i], route_res[i], color = "red")
+print(f"profits:\t{profits_res[:,hub,0]}\
+        \naircraft:\t{ac_res}")
+plt.show()
 # %%
