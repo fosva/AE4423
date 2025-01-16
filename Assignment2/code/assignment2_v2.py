@@ -14,7 +14,7 @@ demand_df = pd.read_excel("Group35.xlsx", skiprows=range(1,5), index_col=(0,1,2)
 
 # number of airports
 AP = len(airports.columns)
-#number of time slots (4h) -2 leading columns
+#number of time slots (4h)
 time_slots = demand_df.shape[1]
 #number of timesteps (in steps of 0.1h = 6m
 time_steps = time_slots*40
@@ -91,9 +91,14 @@ class Node:
         status = "ok"
         dest: Node
         
+        revenue = 0
+        revenue2 = 0
+
         profit = 0
+
         cargo = np.zeros(AP)  # will be updated with the cargo loaded to this flight sorted for destination airport
         cargo2 = np.zeros(AP) # will be updated with the cargo loaded to next flight.
+        
         block_time = 0
 
         # if destination airport is the same as the current airport, destination is the node of the same airport at the next timestep, block time and demand are unchanged
@@ -105,7 +110,7 @@ class Node:
             if dest.profit == -np.inf:
                 return infeasible, "dest not discovered _"+str(dest)
             demand = dest.demand.copy()
-            cargos = [np.zeros(AP)] + dest.cargos
+            cargos = np.vstack((np.zeros(AP), dest.cargos))
 
         # if neither origin nor destination is the hub, the flight is infeasible
         elif (not self.is_hub) and (dest_airpt != hub):
@@ -156,28 +161,29 @@ class Node:
                     demand[self.time_slot-j, self.airpt, dest.airpt] -= load # update demand by substracting the loaded cargo
 
                 # if possible, load cargo destined for the airport after the destination airport
-                if dest.next is not None:
-
-                    for j in range(3):
-                        load = min(demand[self.time_slot-j, self.airpt, dest.next.airpt],\
-                                   ac.capacity - cargo.sum(),\
-                                   ac.capacity - dest_cargo.sum(),\
-                                   factors[j]*total_demand[self.time_slot-j, self.airpt, dest.next.airpt])
-                        
-                        cargo[dest.next.airpt] += load
-                        dest_cargo[dest.next.airpt] += load # store separately for destination node
-                        cargo2[dest.next.airpt] += load
-                        demand[self.time_slot-j, self.airpt, dest.next.airpt] -= load # update demand by substracting the loaded cargo
-
-
-
+                #as long as it is not the same as the next
+                
+                if (dest.next is not None):
+                    if dest.next.airpt != dest.airpt:
+                        for j in range(3):
+                            load = min(demand[self.time_slot-j, self.airpt, dest.next.airpt],\
+                                    ac.capacity - cargo.sum(),\
+                                    ac.capacity - dest_cargo.sum(),\
+                                    factors[j]*total_demand[self.time_slot-j, self.airpt, dest.next.airpt])
+                            
+                            cargo[dest.next.airpt] += load
+                            dest_cargo[dest.next.airpt] += load # store separately for destination node
+                            cargo2[dest.next.airpt] += load
+                            demand[self.time_slot-j, self.airpt, dest.next.airpt] -= load # update demand by substracting the loaded cargo
+                        revenue2 += yield_coeff*dist[dest.airpt, dest.next.airpt]*cargo2.sum()/1000
+                
             # Calculate revenue based on cargo loaded
-            revenue = yield_coeff*d*(cargo + cargo2).sum()/1000
+            revenue = yield_coeff*d*cargo.sum()/1000
 
             # Calculate cost based on aircraft type and flight distance
             cost = ac.fixed_cost + ac.hour_cost*flight_hours + ac.fuel_cost*fuel_price*d/1.5
 
-            profit += revenue - cost
+            profit += revenue + revenue2 - cost
 
             #add cargo used in next leg to current leg.
 
@@ -197,11 +203,6 @@ class Node:
 
         return (profit, (route, times, cargos, demand, dest, block_time)), status
 
-    def update_profit(self, cargo):
-        cargo_diff = cargo - self.cargos[0]
-        revenue_diff = yield_coeff*d*cargo_diff.sum()/1000
-        self.cargos[0] = cargo
-        self.profit += revenue_diff
 
     # Define update function to load new values into the node
     def update(self, profit, route, times, cargos, demand, dest, block_time): #total block time so far (part of system state)
@@ -249,6 +250,7 @@ while not stop:
     #fig, ax = plt.subplots(3,1)
     for ac_type in range(len(fleet)):
         # Check if there are aircraft of this type left available lease
+        ac_type = 1
         if fleet[ac_type] > 0:
             ac = Aircraft(ac_type)
             # Create network of nodes
@@ -267,13 +269,14 @@ while not stop:
                     res = [origin.calc_profit(network, ac, dest_airpt) for dest_airpt in range(AP)]
 
                     # Choose destination with the maximum profit
-                    opt = max(res, key = lambda x: x[0])
+                    opt = max(res, key = lambda x: x[0][0])
 
                     # if flight is feasible, update the origin node with optimal flight
                     if opt[0][0] > -np.inf:
                         (profit, (route, times, cargos, demand, dest, block_time)), status = opt
                         origin.update(profit, route, times, cargos, demand, dest, block_time)
 
+                        
             node_profits = [[network[ap][t].profit for t in range(time_steps)] for ap in range(AP)]
 
             # plot heatmap of optimal profit at each node
@@ -288,15 +291,13 @@ while not stop:
             start: Node = network[hub][0]
 
             t = np.array(start.times)
-            times_diff = t[1:] - t[:-1] - 1
-            steps = t[np.nonzero(times_diff)]
-            durations = times_diff[np.nonzero(times_diff)]
-            print(t, times_diff, steps, sep = "\n")
+            durations = t[1:] - t[:-1]
 
             cargos_disp = np.zeros((time_steps, AP))
-            print(len(steps), len(start.cargos))
-            for i in range(len(steps)):
-                cargos_disp[steps[i]:steps[i]+durations[i]] = start.cargos[i]
+            for i in range(len(t)-1):
+                cargos_disp[t[i]:t[i]+durations[i]] = start.cargos[i]
+
+            cargos_disp[cargos_disp==0] = np.nan
 
             # plot optimal route on profit heatmap, demand heatmap over time and cargo heatmap per flight
             ax[0].plot(start.times, start.route, color = "red")
@@ -304,7 +305,7 @@ while not stop:
             ax[1].imshow(np.log(demand_df.to_numpy()), aspect = "auto", interpolation = "none", extent = [0, time_slots, 0, AP])
             for slot in range(time_slots):
                 ax[1].plot([slot, slot],[0,AP], color = "black", linestyle = "dotted")
-                ax[2].plot([slot*40, slot*40], [0, AP], color = "white", linestyle = "dotted")
+                ax[2].plot([slot*40, slot*40], [0, AP], color = "black", linestyle = "dotted")
 
             ax[2].imshow(cargos_disp.T, aspect = "auto", interpolation = "none")
             ax[2].plot(start.times, start.route, color = "red")
@@ -319,7 +320,6 @@ while not stop:
                 opt_demand = start.demand.copy()
                 opt_ac_type = ac_type
                 opt_block = start.block_time
-            plt.title(f"Aircraft route and max profit per node")
 
             
             plt.show()
