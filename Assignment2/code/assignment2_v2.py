@@ -235,8 +235,9 @@ times_res = []
 cargos_res = []
 demand_res = [total_demand.copy()]
 block_res = []
+used_demand_res = []
 #
-fleet = [1, 0, 1]
+#fleet = [3, 0, 0]
 #
 stop = False
 while not stop:
@@ -307,6 +308,7 @@ while not stop:
     else:
         #update results
         fleet[opt_ac_type] -=1
+        used_demand_res.append((demand_res[-1]-opt_demand)/demand_res[-1])
 
         ac_res.append(opt_ac_type)
         profits_res.append(opt_profits)
@@ -320,11 +322,13 @@ while not stop:
 
 profits_res = np.array(profits_res)
 
+
+
 # plot heatmap of optimal profit at each node
 n_ans = len(ac_res)
 print("Number of answers found: ", n_ans)
 
-fig, ax = plt.subplots(3, n_ans)
+fig, ax = plt.subplots(2, n_ans)
 
 for i in range(n_ans):
     t = np.array(times_res[i])
@@ -336,23 +340,46 @@ for i in range(n_ans):
 
     cargos_disp[cargos_disp==0] = np.nan
 
-    # plot optimal route on profit heatmap, demand heatmap over time and cargo heatmap per flight
+    # plot optimal route on profit heatmap, demand heatmap over time and cargo heatmap per flight    
+    used_demand = np.transpose(used_demand_res[i], (1,0,2))
+    used_demand = used_demand.reshape((20,-1))
+    used_demand[used_demand == 0] = np.nan
 
-    demand = demand_res[i]
-    demand_tot = demand.sum(axis=2) + demand.sum(axis=1)
-
-    ax[1, i].imshow(np.log(demand_tot).T, aspect = "auto", interpolation = "none", extent = [0, time_slots, AP,0])
+    #ax[1, i].imshow(used_demand, aspect = "auto", interpolation = "none", extent = [0, time_slots, AP,0])
     for slot in range(time_slots):
-        ax[1,i].plot([slot, slot],[0,AP], color = "black", linestyle = "dotted")
-        ax[0,i].plot([slot*40, slot*40], [0, AP], color = "black", linestyle = "dotted")
-
-    ax[0,i].imshow(cargos_disp.T, aspect = "auto", interpolation = "none")
+        #ax[1,i].plot([slot, slot],[0,AP], color = "black", linestyle = "dotted")
+        #ax[0,i].plot([slot*40, slot*40], [0, AP], color = "black", linestyle = "dotted")
+        pass
+    
+    ax[0,i].hlines(range(AP), 0, time_steps, color = "gray")
+    pos = ax[0,i].imshow(cargos_disp.T, aspect = "auto", interpolation = "none")
     ax[0,i].plot(times_res[i], route_res[i], color = "red")
-    ax[0,i].set_title(f"Route for solution {i}\naircraft type {ac_res[i]+1}")
+    ax[0,i].set_title(f"Route {i},\naircraft type {ac_res[i]+1}, profit: €{round(profits_res[i,hub,0])}.")
+    ax[0,i].set_yticks(range(AP))
+    
+    bar0 = fig.colorbar(pos0, ax = ax[0,i])
+    
 
-    ax[2,i].imshow(profits_res[i], aspect = "auto", interpolation = "none")
-    ax[2,i].plot(times_res[i], route_res[i], color = "red")
+    pos1 = ax[1,i].imshow(profits_res[i], aspect = "auto", interpolation = "none")
+    ax[1,i].plot(times_res[i], route_res[i], color = "red")
+    ax[1,i].set_yticks(range(AP))
+    ax[1,i].set_xlabel("Time step (0.1h / 6m)")
+
+    bar1 = fig.colorbar(pos1, ax = ax[1,i])
+
+
+    
+
+bar0.set_label("Cargo during flight (kg)")
+bar1.set_label("Profit per state (€)")
+ax[0,0].set_ylabel("Airport")
+ax[1,0].set_ylabel("Airport")
+
+
 print(f"profits:\t{profits_res[:,hub,0]}\
-        \naircraft:\t{ac_res}")
+        \naircraft:\t{ac_res}\
+        \ntotal profit: {profits_res[:,hub,0].sum()}")
+
+plt.rcParams.update({'font.size': 11})
 plt.show()
 # %%
