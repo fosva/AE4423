@@ -290,22 +290,21 @@ while not stop:
             t = np.array(start.times)
             times_diff = t[1:] - t[:-1] - 1
             steps = t[np.nonzero(times_diff)]
-            
+            durations = times_diff[np.nonzero(times_diff)]
             print(t, times_diff, steps, sep = "\n")
 
             cargos_disp = np.zeros((time_steps, AP))
             print(len(steps), len(start.cargos))
             for i in range(len(steps)):
-
-                cargos_disp[steps[i]-1] = start.cargos[i]
-            for i in range(1, len(cargos_disp)):
-                if cargos_disp[i].sum() == 0:
-                    cargos_disp[i] = cargos_disp[i-1]
+                cargos_disp[steps[i]:steps[i]+durations[i]] = start.cargos[i]
 
             # plot optimal route on profit heatmap, demand heatmap over time and cargo heatmap per flight
             ax[0].plot(start.times, start.route, color = "red")
+
             ax[1].imshow(np.log(demand_df.to_numpy()), aspect = "auto", interpolation = "none")
+
             ax[2].imshow(cargos_disp.T, aspect = "auto", interpolation = "none")
+            ax[2].plot(start.times, start.route, color = "red")
 
             # Update optimal results if the profit at the start node is higher than the current optimal profit
             if start.profit > opt_profit:
