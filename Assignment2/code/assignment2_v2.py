@@ -3,9 +3,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from math import pi, sqrt, sin, cos, ceil
-from debugger import debug
+
 import sys
 np.set_printoptions(threshold=sys.maxsize//2)
+
+
 
 # Read the excel files
 airports = pd.read_excel("AirportData.xlsx", index_col=0)
@@ -236,8 +238,9 @@ cargos_res = []
 demand_res = [total_demand.copy()]
 block_res = []
 used_demand_res = []
+block_res = []
 #
-#fleet = [3, 0, 0]
+#fleet = [0, 0, 2]
 #
 stop = False
 while not stop:
@@ -261,7 +264,7 @@ while not stop:
             #configure end node
             end: Node = network[hub][-1]
             end.demand = demand_res[-1].copy()
-            end.profit = 0
+            end.profit = -ac.lease_cost
             print("network initialized")
 
             # Loop through from last timestep backwards
@@ -282,18 +285,18 @@ while not stop:
 
                         origin.update(profit, route, times, cargos, demand, dest, block_time)
 
-                        
-            node_profits = [[network[ap][t].profit for t in range(time_steps)] for ap in range(AP)]
-
-
             #start node is at 24h mark (0*24). By definition
-            #of the Node class. It should give the best valid route
+            #of the Node class and after looping over the network, it should give the best valid route
             #(valid block time)
             start: Node = network[hub][0]
 
+            node_profits = [[network[ap][t].profit for t in range(time_steps)] for ap in range(AP)]
+
+            
+
             # Update optimal results if the profit at the start node is higher than the current optimal profit
             if start.profit > opt_profits[hub][0]:
-                opt_profits = [[node.profit for node in airpt] for airpt in network]
+                opt_profits = node_profits
                 opt_route = start.route
                 opt_times = start.times
                 opt_cargos = start.cargos
@@ -316,17 +319,69 @@ while not stop:
         times_res.append(opt_times)
         cargos_res.append(opt_cargos)
         demand_res.append(opt_demand)
+        block_res.append(opt_block)
     print(f"aircraft used so far: {ac_res}\
           \naircraft left in fleet: {fleet}")
 #%%
 
 profits_res = np.array(profits_res)
+n_ans = len(ac_res)
+print("Number of answers found: ", n_ans)
 
+
+#make plot and string array schedule for printing
+schedules = []
+
+for i in range(n_ans):
+    schedule = pd.DataFrame()
+    route = route_res[i]
+    times = times_res[i]
+
+    flight_route = []
+    departure_times = []
+    arrival_times = []
+
+    flight_cargos = []
+
+    for j in range(1, len(times)):
+        if route[j] != route[j-1]:
+            leg = f"{airports.columns[route[j-1]]} -> {airports.columns[route[j]]}"
+            flight_route.append(leg)
+            dep_t = times[j-1]/10
+            arr_t = times[j]/10
+
+            dep_d = 1 + dep_t//24
+            arr_d = 1 + arr_t//24
+
+            dep_h = dep_t % 24
+            arr_h = arr_t % 24
+
+            dep_m = 60*(dep_h % 1)
+            arr_m = 60*(arr_h % 1)
+
+            departure_times.append(f"day {int(dep_d)}, {int(dep_h):02d}:{int(dep_m):02d}")
+            arrival_times.append(f"day {int(arr_d)}, {int(arr_h):02d}:{int(arr_m):02d}")
+
+            flight_cargo = cargos_res[i][j-1]
+            flight_cargo_dct = dict()
+            for dest in flight_cargo.nonzero()[0]:
+
+                flight_cargo_dct[airports.columns[dest]] = int(flight_cargo[dest])
+            flight_cargos.append(flight_cargo_dct)
+
+    schedule["route"] = flight_route
+    schedule["departure times"] = departure_times
+    schedule["ready times"] = arrival_times
+    schedule["cargo (kg)"] = flight_cargos
+
+    schedules.append(schedule)
+for schedule in schedules:
+    print(schedule, end = "\n\n")
+#%%
 
 
 # plot heatmap of optimal profit at each node
-n_ans = len(ac_res)
-print("Number of answers found: ", n_ans)
+
 
 fig, ax = plt.subplots(2, n_ans)
 
@@ -340,10 +395,6 @@ for i in range(n_ans):
 
     cargos_disp[cargos_disp==0] = np.nan
 
-    # plot optimal route on profit heatmap, demand heatmap over time and cargo heatmap per flight    
-    used_demand = np.transpose(used_demand_res[i], (1,0,2))
-    used_demand = used_demand.reshape((20,-1))
-    used_demand[used_demand == 0] = np.nan
 
     #ax[1, i].imshow(used_demand, aspect = "auto", interpolation = "none", extent = [0, time_slots, AP,0])
     for slot in range(time_slots):
@@ -352,13 +403,16 @@ for i in range(n_ans):
         pass
     
     ax[0,i].hlines(range(AP), 0, time_steps, color = "gray")
-    pos = ax[0,i].imshow(cargos_disp.T, aspect = "auto", interpolation = "none")
+    ac = Aircraft(ac_res[i])
+    pos0 = ax[0,i].imshow(cargos_disp.T, aspect = "auto", interpolation = "none", vmin = 0.2*ac.capacity, vmax = ac.capacity)
     ax[0,i].plot(times_res[i], route_res[i], color = "red")
-    ax[0,i].set_title(f"Route {i},\naircraft type {ac_res[i]+1}, profit: €{round(profits_res[i,hub,0])}.")
+    ax[0,i].set_title(f"Route {i+1},\naircraft type {ac_res[i]+1}, profit: €{round(profits_res[i,hub,0])}\nblock time: {int(block_res[i])/10}h.")
     ax[0,i].set_yticks(range(AP))
     
     bar0 = fig.colorbar(pos0, ax = ax[0,i])
+
     
+    #bar0.set_ticks(np.linspace(ac.capacity*0.2, ac.capacity, 4)[:-1])
 
     pos1 = ax[1,i].imshow(profits_res[i], aspect = "auto", interpolation = "none")
     ax[1,i].plot(times_res[i], route_res[i], color = "red")
@@ -370,7 +424,7 @@ for i in range(n_ans):
 
     
 
-bar0.set_label("Cargo during flight (kg)")
+bar0.set_label("Cargo during flight (t)")
 bar1.set_label("Profit per state (€)")
 ax[0,0].set_ylabel("Airport")
 ax[1,0].set_ylabel("Airport")
@@ -380,6 +434,8 @@ print(f"profits:\t{profits_res[:,hub,0]}\
         \naircraft:\t{ac_res}\
         \ntotal profit: {profits_res[:,hub,0].sum()}")
 
-plt.rcParams.update({'font.size': 11})
+
+fig.savefig("figure1.png", dpi = 300)
+fig.savefig("figure2.png", dpi = 600)
 plt.show()
 # %%
