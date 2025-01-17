@@ -424,7 +424,7 @@ for i in range(n_ans):
 
     
 
-bar0.set_label("Cargo during flight (t)")
+bar0.set_label("Cargo during flight (kg)")
 bar1.set_label("Profit per state (€)")
 ax[0,0].set_ylabel("Airport")
 ax[1,0].set_ylabel("Airport")
